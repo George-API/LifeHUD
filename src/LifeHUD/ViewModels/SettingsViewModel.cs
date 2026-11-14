@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Windows;
+using System.Windows.Media;
 using System.Windows.Input;
 using LifeHUD.Interop;
 using LifeHUD.Models;
@@ -12,16 +14,90 @@ namespace LifeHUD.ViewModels;
 
 public sealed record Option<T>(T Value, string Label);
 
+/// <summary>One swatch in the theme gallery, with brushes for a miniature preview of the HUD.</summary>
+public sealed class PaletteOption : ObservableObject
+{
+    private readonly Func<string, ThemePalette> _resolve;
+    private readonly Action<string> _select;
+    private bool _isSelected;
+
+    public PaletteOption(ThemePalette palette, Func<string, ThemePalette> resolve, Action<string> select, bool selected)
+    {
+        Id = palette.Id;
+        Name = palette.Name;
+        Tagline = palette.Tagline;
+        Group = palette.Group;
+        _resolve = resolve;
+        _select = select;
+        _isSelected = selected;
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public string Tagline { get; }
+    public string Group { get; }
+
+    private ThemePalette P => _resolve(Id);
+    public Brush SurfaceBrush => Solid(P.Tint, opaque: true);
+    public Brush AmbientBrush => ThemeService.Ambient(P);
+    public Brush CardBrush => Solid(P.Card);
+    public Brush CardBorderBrush => Solid(P.CardBorder);
+    public Brush TextBrush => Solid(P.Text);
+    public Brush AccentBrush
+    {
+        get
+        {
+            if (P.Accent is uint a) return Solid(a);
+            var b = new SolidColorBrush(ThemeService.ReadAccent(P.IsDark)); // Classic uses the Windows accent
+            b.Freeze();
+            return b;
+        }
+    }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (!Set(ref _isSelected, value) || !value) return;
+            _select(Id);
+        }
+    }
+
+    internal void SetSelected(bool value) { if (_isSelected != value) { _isSelected = value; Raise(nameof(IsSelected)); } }
+
+    /// <summary>Classic changes with light/dark mode, so its preview must be rebuilt.</summary>
+    internal void RefreshPreview() =>
+        Raise(nameof(SurfaceBrush), nameof(AmbientBrush), nameof(CardBrush), nameof(CardBorderBrush), nameof(TextBrush), nameof(AccentBrush));
+
+    private static Brush Solid(uint argb, bool opaque = false)
+    {
+        var c = ThemeService.C(opaque ? argb | 0xFF000000 : argb);
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
+}
+
 public sealed class SettingsViewModel : ObservableObject
 {
     private readonly SettingsService _settings;
     private readonly WeatherViewModel _weather;
     private readonly Action<bool> _setHudVisible;
+    private readonly ThemeService _themeService;
+    private readonly IReadOnlyList<PaletteOption> _allPalettes;
     private bool _switchingLayout;
 
-    public SettingsViewModel(SettingsService settings, WeatherViewModel weather, Action<bool> setHudVisible)
+    public SettingsViewModel(SettingsService settings, WeatherViewModel weather, ThemeService theme, Action<bool> setHudVisible)
     {
         _settings = settings;
+        _themeService = theme;
+        var palettes = ThemePalettes.All.Select(p => new PaletteOption(p, theme.Resolve, SelectPalette,
+            string.Equals(p.Id, settings.Current.Palette, StringComparison.OrdinalIgnoreCase))).ToList();
+        SignaturePalettes = palettes.Where(p => p.Group == ThemePalettes.SignatureGroup).ToList();
+        MoodPalettes = palettes.Where(p => p.Group == ThemePalettes.MoodGroup).ToList();
+        _allPalettes = palettes;
+        theme.ThemeChanged += (_, _) => { foreach (var p in _allPalettes.Where(p => p.Id == ThemePalettes.Classic)) p.RefreshPreview(); };
         _weather = weather;
         _setHudVisible = setHudVisible;
 
@@ -124,6 +200,29 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => S.Theme;
         set { if (S.Theme != value) { _settings.Update(s => s.Theme = value, SettingKeys.Theme); Raise(nameof(SelectedTheme)); } }
+    }
+
+    public IReadOnlyList<PaletteOption> SignaturePalettes { get; }
+    public IReadOnlyList<PaletteOption> MoodPalettes { get; }
+
+    /// <summary>Light/Dark mode only applies to Classic; every other theme has its own fixed tone.</summary>
+    public bool IsModeEditable => string.Equals(S.Palette, ThemePalettes.Classic, StringComparison.OrdinalIgnoreCase);
+
+    public string CurrentPaletteText
+    {
+        get
+        {
+            var p = _themeService.Resolve(S.Palette);
+            return $"{p.Name}. {p.Tagline}";
+        }
+    }
+
+    private void SelectPalette(string id)
+    {
+        foreach (var p in _allPalettes) p.SetSelected(p.Id == id);
+        if (string.Equals(S.Palette, id, StringComparison.OrdinalIgnoreCase)) return;
+        _settings.Update(s => s.Palette = id, SettingKeys.Theme);
+        Raise(nameof(IsModeEditable), nameof(CurrentPaletteText));
     }
 
     public bool Use24HourClock

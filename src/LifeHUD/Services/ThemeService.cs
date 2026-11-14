@@ -7,12 +7,13 @@ using Microsoft.Win32;
 namespace LifeHUD.Services;
 
 /// <summary>
-/// Owns every colour in the app. Brushes are written into Application resources and consumed via
-/// DynamicResource, so a theme or accent change restyles everything live.
+/// Owns every colour in the app. A <see cref="ThemePalette"/> is expanded into the full brush set, written
+/// into Application resources and consumed via DynamicResource, so switching themes restyles everything live.
 /// </summary>
 public sealed class ThemeService
 {
-    private ThemePreference _preference;
+    private ThemePreference _mode;
+    private string _paletteId = ThemePalettes.Classic;
 
     public ThemeService()
     {
@@ -25,6 +26,7 @@ public sealed class ThemeService
 
     public bool IsDark { get; private set; }
     public Color Accent { get; private set; }
+    public ThemePalette Palette { get; private set; } = ThemePalettes.ClassicDark;
 
     /// <summary>True when the HUD has a live blur behind it (so surfaces can be translucent).</summary>
     public bool HudTranslucent { get; private set; } = true;
@@ -32,11 +34,12 @@ public sealed class ThemeService
     public event EventHandler? ThemeChanged;
 
     /// <summary>Acrylic tint the HUD window should use for the current theme.</summary>
-    public Color HudAcrylicTint => IsDark ? Color.FromArgb(0xB4, 0x1A, 0x1A, 0x1E) : Color.FromArgb(0xA8, 0xF4, 0xF4, 0xF7);
+    public Color HudAcrylicTint => C(Palette.Tint);
 
-    public void SetPreference(ThemePreference preference)
+    public void Configure(ThemePreference mode, string? paletteId)
     {
-        _preference = preference;
+        _mode = mode;
+        _paletteId = string.IsNullOrWhiteSpace(paletteId) ? ThemePalettes.Classic : paletteId;
         Apply();
     }
 
@@ -47,67 +50,85 @@ public sealed class ThemeService
         Apply();
     }
 
+    /// <summary>The concrete palette for an id, resolving Classic against the light/dark mode.</summary>
+    public ThemePalette Resolve(string? id)
+    {
+        var p = ThemePalettes.Find(id);
+        if (p is null || p.Id == ThemePalettes.Classic)
+        {
+            bool dark = _mode switch
+            {
+                ThemePreference.Dark => true,
+                ThemePreference.Light => false,
+                _ => SystemPrefersDark(),
+            };
+            return dark ? ThemePalettes.ClassicDark : ThemePalettes.ClassicLight;
+        }
+        return p;
+    }
+
     public void Apply()
     {
-        IsDark = _preference switch
-        {
-            ThemePreference.Dark => true,
-            ThemePreference.Light => false,
-            _ => SystemPrefersDark(),
-        };
-        Accent = ReadAccent(IsDark);
+        var p = Palette = Resolve(_paletteId);
+        IsDark = p.IsDark;
+        Accent = p.Accent is uint a ? C(a) : ReadAccent(IsDark);
 
         var r = Application.Current.Resources;
-        void Set(string key, uint argb) => r[key] = Freeze(new SolidColorBrush(FromArgb(argb)));
+        void Set(string key, Color c) => r[key] = Freeze(new SolidColorBrush(c));
 
-        if (IsDark)
-        {
-            Set("HudTintBrush", HudTranslucent ? 0x14000000 : 0xFA1C1C20);
-            Set("HudEdgeBrush", 0x1AFFFFFF);
-            Set("CardBrush", 0x12FFFFFF);
-            Set("CardBorderBrush", 0x14FFFFFF);
-            Set("TextPrimaryBrush", 0xFFFFFFFF);
-            Set("TextSecondaryBrush", 0xB8FFFFFF);
-            Set("TextTertiaryBrush", 0x78FFFFFF);
-            Set("ControlFillBrush", 0x14FFFFFF);
-            Set("ControlFillHoverBrush", 0x22FFFFFF);
-            Set("InputBrush", 0x10FFFFFF);
-            Set("DividerBrush", 0x18FFFFFF);
-            Set("TrackBrush", 0x2EFFFFFF);
-            Set("ScrollThumbBrush", 0x50FFFFFF);
-            Set("TooltipBrush", 0xFF2C2C30);
-            Set("TooltipBorderBrush", 0x33FFFFFF);
-            Set("PlayButtonBrush", 0xF2FFFFFF);
-            Set("PlayButtonForegroundBrush", 0xFF111114);
-            r["WeatherCloudBrush"] = Gradient(0xFFFFFFFF, 0xFFC3CCDA);
-        }
-        else
-        {
-            Set("HudTintBrush", HudTranslucent ? 0x26FFFFFF : 0xFAF3F3F6);
-            Set("HudEdgeBrush", 0x14000000);
-            Set("CardBrush", 0x9EFFFFFF);
-            Set("CardBorderBrush", 0x10000000);
-            Set("TextPrimaryBrush", 0xE6000000);
-            Set("TextSecondaryBrush", 0xA0000000);
-            Set("TextTertiaryBrush", 0x6E000000);
-            Set("ControlFillBrush", 0x0C000000);
-            Set("ControlFillHoverBrush", 0x16000000);
-            Set("InputBrush", 0x0A000000);
-            Set("DividerBrush", 0x12000000);
-            Set("TrackBrush", 0x1C000000);
-            Set("ScrollThumbBrush", 0x40000000);
-            Set("TooltipBrush", 0xFFFAFAFA);
-            Set("TooltipBorderBrush", 0x1A000000);
-            Set("PlayButtonBrush", 0xEB111114);
-            Set("PlayButtonForegroundBrush", 0xFFFFFFFF);
-            r["WeatherCloudBrush"] = Gradient(0xFFC4CEDC, 0xFF7E8DA5);
-        }
+        Color text = C(p.Text);
+        Color Ink(byte alpha) => Color.FromArgb(alpha, text.R, text.G, text.B);
+        // Derived alphas are tuned separately for dark and light bases.
+        bool d = IsDark;
 
-        r["AccentBrush"] = Freeze(new SolidColorBrush(Accent));
-        r["AccentForegroundBrush"] = Freeze(new SolidColorBrush(IsDark ? Colors.Black : Colors.White));
-        r["SpotifyBrush"] = Freeze(new SolidColorBrush(Color.FromRgb(0x1E, 0xD7, 0x60)));
+        // Surface: translucent tint over acrylic, or an opaque version when blur isn't available.
+        Color tint = C(p.Tint);
+        r["HudTintBrush"] = HudTranslucent
+            ? Ambient(p)
+            : Ambient(p, Color.FromArgb(0xFA, tint.R, tint.G, tint.B));
+
+        Set("HudEdgeBrush", Ink(d ? (byte)0x1A : (byte)0x14));
+        Set("CardBrush", C(p.Card));
+        Set("CardBorderBrush", C(p.CardBorder));
+        Set("TextPrimaryBrush", text);
+        Set("TextSecondaryBrush", Ink(d ? (byte)0xB8 : (byte)0xA0));
+        Set("TextTertiaryBrush", Ink(d ? (byte)0x78 : (byte)0x6E));
+        Set("ControlFillBrush", Ink(d ? (byte)0x14 : (byte)0x0C));
+        Set("ControlFillHoverBrush", Ink(d ? (byte)0x22 : (byte)0x16));
+        Set("InputBrush", Ink(d ? (byte)0x10 : (byte)0x0A));
+        Set("DividerBrush", Ink(d ? (byte)0x18 : (byte)0x12));
+        Set("TrackBrush", Ink(d ? (byte)0x2E : (byte)0x1C));
+        Set("ScrollThumbBrush", Ink(d ? (byte)0x50 : (byte)0x40));
+
+        // Tooltips float above everything as separate popups, so they need an opaque surface.
+        Color tip = d ? Mix(Color.FromRgb(tint.R, tint.G, tint.B), Colors.White, 0.08) : Mix(Color.FromRgb(tint.R, tint.G, tint.B), Colors.White, 0.6);
+        Set("TooltipBrush", tip);
+        Set("TooltipBorderBrush", Ink(0x26));
+
+        Set("AccentBrush", Accent);
+        Set("AccentForegroundBrush", p.Accent is null ? (d ? Colors.Black : Colors.White) : C(p.OnAccent));
+        Set("PlayButtonBrush", p.AccentPlayButton ? Accent : Ink(d ? (byte)0xF2 : (byte)0xEB));
+        Set("PlayButtonForegroundBrush", p.AccentPlayButton ? C(p.OnAccent | 0xFF000000) : Color.FromRgb(tint.R, tint.G, tint.B));
+        Set("SpotifyBrush", Color.FromRgb(0x1E, 0xD7, 0x60));
+        r["WeatherCloudBrush"] = d ? Gradient(0xFFFFFFFF, 0xFFC3CCDA) : Gradient(0xFFC4CEDC, 0xFF7E8DA5);
 
         ThemeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The palette's ambient light as a brush, optionally laid over a solid base.</summary>
+    public static Brush Ambient(ThemePalette p, Color? solidBase = null)
+    {
+        if (p.Ambient.Length == 0)
+            return Freeze(new SolidColorBrush(solidBase ?? Colors.Transparent));
+
+        var g = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1) };
+        for (int i = 0; i < p.Ambient.Length; i++)
+        {
+            Color c = C(p.Ambient[i]);
+            if (solidBase is Color b) c = Over(c, b); // flatten onto the opaque base
+            g.GradientStops.Add(new GradientStop(c, p.Ambient.Length == 1 ? 0 : i / (double)(p.Ambient.Length - 1)));
+        }
+        return Freeze(g);
     }
 
     private static bool SystemPrefersDark()
@@ -120,7 +141,7 @@ public sealed class ThemeService
         catch { return true; }
     }
 
-    private static Color ReadAccent(bool dark)
+    public static Color ReadAccent(bool dark)
     {
         try
         {
@@ -135,11 +156,24 @@ public sealed class ThemeService
         }
     }
 
-    private static Color FromArgb(uint argb) =>
+    public static Color C(uint argb) =>
         Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
+    /// <summary>Alpha-composite <paramref name="top"/> over an opaque <paramref name="bottom"/>.</summary>
+    public static Color Over(Color top, Color bottom)
+    {
+        double a = top.A / 255.0;
+        return Color.FromArgb(bottom.A,
+            (byte)(top.R * a + bottom.R * (1 - a)),
+            (byte)(top.G * a + bottom.G * (1 - a)),
+            (byte)(top.B * a + bottom.B * (1 - a)));
+    }
+
+    private static Color Mix(Color a, Color b, double t) =>
+        Color.FromRgb((byte)(a.R + (b.R - a.R) * t), (byte)(a.G + (b.G - a.G) * t), (byte)(a.B + (b.B - a.B) * t));
+
     private static Brush Gradient(uint top, uint bottom) =>
-        Freeze(new LinearGradientBrush(FromArgb(top), FromArgb(bottom), 90));
+        Freeze(new LinearGradientBrush(C(top), C(bottom), 90));
 
     private static T Freeze<T>(T f) where T : Freezable { f.Freeze(); return f; }
 }

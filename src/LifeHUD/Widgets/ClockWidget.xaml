@@ -5,17 +5,26 @@
               x:Name="Self">
     <Grid>
         <!-- Top HUD: the centrepiece. Large, centred, no card, so it anchors the strip. -->
-        <Viewbox StretchDirection="DownOnly" Margin="32,0"
+        <!-- Date sits above the time (lock-screen order), so the numerals end the read and carry the weight. -->
+        <Viewbox StretchDirection="DownOnly" Margin="36,2,36,0"
                  Visibility="{Binding IsVertical, ElementName=Self, Converter={StaticResource InvBoolToVis}}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding Time}" FontFamily="{StaticResource DisplayFont}" FontSize="46" FontWeight="SemiBold"
-                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,-6,0,-6" />
-                    <TextBlock Text="{Binding Period}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"
-                               VerticalAlignment="Bottom" Margin="6,0,0,7"
+                <TextBlock HorizontalAlignment="Center" FontSize="13" FontWeight="Medium" Margin="0,0,0,1">
+                    <Run Text="{Binding Weekday, Mode=OneWay}" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" /><Run
+                         Text="  " /><Run Text="{Binding MonthDay, Mode=OneWay}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                </TextBlock>
+                <!-- Centre the digits themselves; the period hangs off to the right without shifting them. -->
+                <Grid HorizontalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" TextElement.FontFamily="{StaticResource DisplayFont}" TextElement.FontSize="54"
+                                TextElement.FontWeight="Bold" Typography.NumeralAlignment="Tabular" Margin="0,-9,0,-9">
+                        <TextBlock Text="{Binding Hours}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Text=":" Foreground="{DynamicResource TextPrimaryBrush}" Opacity="0.5" FontWeight="Normal" Margin="0,-4,0,0" />
+                        <TextBlock Text="{Binding Minutes}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Period}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextTertiaryBrush}"
+                               HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-26,9"
                                Visibility="{Binding Period, Converter={StaticResource StringToVis}}" />
-                </StackPanel>
-                <TextBlock Text="{Binding DateLong}" FontSize="13.5" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" />
+                </Grid>
             </StackPanel>
         </Viewbox>
 
@@ -23,8 +32,12 @@
         <StackPanel Margin="10,6,10,4" Visibility="{Binding IsVertical, ElementName=Self, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="{Binding Greeting}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" />
             <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
-                <TextBlock Text="{Binding Time}" FontFamily="{StaticResource DisplayFont}" FontSize="58" FontWeight="SemiBold"
-                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextPrimaryBrush}" Margin="-2,-4,0,-8" />
+                <StackPanel Orientation="Horizontal" TextElement.FontFamily="{StaticResource DisplayFont}" TextElement.FontSize="58"
+                            TextElement.FontWeight="Bold" Typography.NumeralAlignment="Tabular" Margin="-2,-4,0,-8">
+                    <TextBlock Text="{Binding Hours}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text=":" Foreground="{DynamicResource TextPrimaryBrush}" Opacity="0.5" FontWeight="Normal" Margin="0,-4,0,0" />
+                    <TextBlock Text="{Binding Minutes}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                </StackPanel>
                 <TextBlock Text="{Binding Period}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"
                            VerticalAlignment="Bottom" Margin="6,0,0,6"
                            Visibility="{Binding Period, Converter={StaticResource StringToVis}}" />

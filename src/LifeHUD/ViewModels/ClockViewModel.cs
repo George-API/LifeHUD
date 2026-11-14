@@ -12,6 +12,7 @@ public sealed class ClockViewModel : ObservableObject
     private readonly DispatcherTimer _timer;
     private DateTime _lastDay;
     private string _time = "", _period = "", _dateLong = "", _greeting = "", _dateShort = "";
+    private string _hours = "", _minutes = "", _weekday = "", _monthDay = "";
 
     public ClockViewModel(SettingsService settings)
     {
@@ -29,6 +30,11 @@ public sealed class ClockViewModel : ObservableObject
     public event EventHandler? DayChanged;
 
     public string Time { get => _time; private set => Set(ref _time, value); }
+    public string Hours { get => _hours; private set => Set(ref _hours, value); }
+    /// <summary>Minutes, plus ":ss" when seconds are shown.</summary>
+    public string Minutes { get => _minutes; private set => Set(ref _minutes, value); }
+    public string Weekday { get => _weekday; private set => Set(ref _weekday, value); }
+    public string MonthDay { get => _monthDay; private set => Set(ref _monthDay, value); }
     public string Period { get => _period; private set => Set(ref _period, value); }
     public string DateLong { get => _dateLong; private set => Set(ref _dateLong, value); }
     public string DateShort { get => _dateShort; private set => Set(ref _dateShort, value); }
@@ -60,6 +66,8 @@ public sealed class ClockViewModel : ObservableObject
         string fmt = s.Use24HourClock ? "HH:mm" : "h:mm";
         if (s.ShowSeconds) fmt += ":ss";
         Time = now.ToString(fmt, culture);
+        Hours = now.ToString(s.Use24HourClock ? "HH" : "%h", culture);
+        Minutes = now.ToString(s.ShowSeconds ? "mm:ss" : "mm", culture);
 
         if (s.Use24HourClock) Period = "";
         else
@@ -70,6 +78,8 @@ public sealed class ClockViewModel : ObservableObject
 
         string monthDay = now.ToString(culture.DateTimeFormat.MonthDayPattern, culture);
         DateLong = $"{now.ToString("dddd", culture)}, {monthDay}";
+        Weekday = now.ToString("dddd", culture);
+        MonthDay = monthDay;
         DateShort = $"{now.ToString("ddd", culture)} {monthDay}";
 
         Greeting = now.Hour switch

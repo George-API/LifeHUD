@@ -30,6 +30,16 @@ dotnet publish src/LifeHUD -c Release -r win-x64 --self-contained false -o publi
 | Quick Notes | Local Markdown file | Auto-saves 600 ms after you stop typing, with atomic writes. Also flushed on exit and sign-out. |
 | Spotify | Windows media session (SMTC) | Reads track, artwork, timeline and controls straight from the Spotify desktop app, with no sign-in or Web API. Falls back to any other player. A glow is tinted from the album art. |
 
+## Themes
+
+Pick a theme in Settings. A gallery shows each one as a miniature HUD.
+
+* **Signature:** Classic (follows Windows light/dark and accent), Graphite, Midnight, Starlight, Titanium, Rosé
+* **Moods:** Hearth (cozy), Atelier (creative), Metropolis (city), Evergreen (nature), Neon (cyberpunk), Nebula (space)
+
+Each theme is one entry in Models/ThemePalette.cs: glass tint, ambient light gradient, card, text and accent.
+`ThemeService` derives the rest of the brushes (secondary text, fills, tracks, tooltips, play button) from those.
+
 ## The two layouts
 
 Both layouts are first-class. Each widget has two hand-built presentations; neither layout is a rotated

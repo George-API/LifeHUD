@@ -57,8 +57,11 @@ public partial class App : Application
         _settings.Current.StartWithWindows = StartupService.IsEnabled();
 
         _theme = new ThemeService();
-        _theme.SetPreference(_settings.Current.Theme);
-        _settings.Changed += (_, key) => { if (key == SettingKeys.Theme) _theme.SetPreference(_settings.Current.Theme); };
+        _theme.Configure(_settings.Current.Theme, _settings.Current.Palette);
+        _settings.Changed += (_, key) =>
+        {
+            if (key == SettingKeys.Theme) _theme.Configure(_settings.Current.Theme, _settings.Current.Palette);
+        };
 
         var clock = new ClockViewModel(_settings);
         _weather = new WeatherViewModel(new WeatherService(), _settings, ShowSettings, Dispatcher);
@@ -100,7 +103,7 @@ public partial class App : Application
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(new SettingsViewModel(_settings, _weather, SetHudVisible), _theme);
+        _settingsWindow = new SettingsWindow(new SettingsViewModel(_settings, _weather, _theme, SetHudVisible), _theme);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();

@@ -35,6 +35,8 @@ public sealed class AppSettings
     public bool HudVisible { get; set; } = true;
 
     public ThemePreference Theme { get; set; } = ThemePreference.System;
+    /// <summary>Id of a <see cref="ThemePalette"/>; "classic" follows <see cref="Theme"/> and the Windows accent.</summary>
+    public string Palette { get; set; } = ThemePalettes.Classic;
 
     public bool Use24HourClock { get; set; } = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern.Contains('H');
     public bool ShowSeconds { get; set; }
@@ -56,6 +58,7 @@ public sealed class AppSettings
         TopSizePercent = Math.Clamp(double.IsFinite(TopSizePercent) ? TopSizePercent : 10, TopSizeMin, TopSizeMax);
         SideSizePercent = Math.Clamp(double.IsFinite(SideSizePercent) ? SideSizePercent : 14, SideSizeMin, SideSizeMax);
         WeatherCity ??= string.Empty;
+        if (ThemePalettes.Find(Palette) is null) Palette = ThemePalettes.Classic;
     }
 
     private static bool SafeIsMetric()
