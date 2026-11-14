@@ -1,0 +1,46 @@
+<c:WidgetView x:Class="LifeHUD.Widgets.NotesWidget"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:c="clr-namespace:LifeHUD.Controls"
+              x:Name="Self">
+    <Grid>
+        <!-- ===================== Top HUD: a scratchpad strip ===================== -->
+        <Border Style="{StaticResource Card}" Padding="12,7,6,7"
+                Visibility="{Binding IsVertical, ElementName=Self, Converter={StaticResource InvBoolToVis}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="0,0,6,0">
+                    <TextBlock Text="NOTES" Style="{StaticResource Overline}" />
+                    <TextBlock Text="{Binding Status}" Style="{StaticResource Overline}" HorizontalAlignment="Right" FontWeight="Normal" />
+                </Grid>
+                <TextBox Grid.Row="1" Style="{StaticResource GhostTextBox}" Tag="Jot something down…" Margin="0,2,0,0"
+                         Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" />
+            </Grid>
+        </Border>
+
+        <!-- ===================== Life Sidebar: a proper writing surface ===================== -->
+        <Border Style="{StaticResource Card}" Padding="14,12,8,12"
+                Visibility="{Binding IsVertical, ElementName=Self, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="0,0,6,0">
+                    <TextBlock Text="Notes" Style="{StaticResource WidgetTitle}" />
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Status}" Style="{StaticResource Caption}" FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding WordCountText}" Style="{StaticResource Caption}" FontSize="11" Foreground="{DynamicResource TextTertiaryBrush}" />
+                    </StackPanel>
+                </Grid>
+                <TextBox Grid.Row="1" Style="{StaticResource GhostTextBox}" Tag="Jot something down…" Margin="0,8,0,0" FontSize="13.5"
+                         Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" />
+            </Grid>
+        </Border>
+    </Grid>
+</c:WidgetView>

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Windows 11 SDK projection gives us WinRT media sessions, geolocation and accent colours. -->
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>LifeHUD</AssemblyName>
+    <RootNamespace>LifeHUD</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\LifeHUD.ico</ApplicationIcon>
+    <Product>Life HUD</Product>
+    <Description>Your day, at a glance. A native Windows desktop HUD.</Description>
+    <Version>0.1.0</Version>
+    <!-- WPF Fluent ThemeMode is marked experimental; we use it for the settings window only. -->
+    <NoWarn>$(NoWarn);WPF0001;WFO0003</NoWarn>
+    <TieredPGO>true</TieredPGO>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\LifeHUD.ico" />
+  </ItemGroup>
+
+</Project>

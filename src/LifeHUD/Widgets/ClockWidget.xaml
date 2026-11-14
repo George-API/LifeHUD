@@ -1,0 +1,35 @@
+<c:WidgetView x:Class="LifeHUD.Widgets.ClockWidget"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:c="clr-namespace:LifeHUD.Controls"
+              x:Name="Self">
+    <Grid>
+        <!-- Top HUD: the centrepiece. Large, centred, no card, so it anchors the strip. -->
+        <Viewbox StretchDirection="DownOnly" Margin="32,0"
+                 Visibility="{Binding IsVertical, ElementName=Self, Converter={StaticResource InvBoolToVis}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Text="{Binding Time}" FontFamily="{StaticResource DisplayFont}" FontSize="46" FontWeight="SemiBold"
+                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,-6,0,-6" />
+                    <TextBlock Text="{Binding Period}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"
+                               VerticalAlignment="Bottom" Margin="6,0,0,7"
+                               Visibility="{Binding Period, Converter={StaticResource StringToVis}}" />
+                </StackPanel>
+                <TextBlock Text="{Binding DateLong}" FontSize="13.5" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" />
+            </StackPanel>
+        </Viewbox>
+
+        <!-- Life Sidebar: left-aligned editorial header with a greeting. -->
+        <StackPanel Margin="10,6,10,4" Visibility="{Binding IsVertical, ElementName=Self, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{Binding Greeting}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                <TextBlock Text="{Binding Time}" FontFamily="{StaticResource DisplayFont}" FontSize="58" FontWeight="SemiBold"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextPrimaryBrush}" Margin="-2,-4,0,-8" />
+                <TextBlock Text="{Binding Period}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Bottom" Margin="6,0,0,6"
+                           Visibility="{Binding Period, Converter={StaticResource StringToVis}}" />
+            </StackPanel>
+            <TextBlock Text="{Binding DateLong}" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+    </Grid>
+</c:WidgetView>
