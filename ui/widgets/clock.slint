@@ -1,0 +1,44 @@
+// Lock-screen typography: a small semibold date line, then heavy, tightly tracked numerals that
+// fill the available height. No AM/PM, no ornament.
+
+import { Theme } from "../theme.slint";
+import { HudState } from "../state.slint";
+
+component LockTime inherits Text {
+    in property <length> size;
+    text: HudState.hours + ":" + HudState.minutes;
+    font-family: Theme.display-font;
+    font-size: root.size;
+    font-weight: 800;
+    letter-spacing: -0.04 * root.size;
+    color: Theme.text.with-alpha(Theme.text.alpha * 0.94);
+}
+
+component LockDate inherits Text {
+    text: HudState.weekday + ", " + HudState.month-day;
+    font-weight: 600;
+    color: Theme.text.with-alpha(Theme.text.alpha * 0.78);
+}
+
+/// Top HUD centrepiece.
+export component ClockStrip {
+    property <length> date-size: clamp(root.height * 0.16, 11px, 15px);
+    property <length> time-size: min(66px, root.height * 0.76);
+
+    VerticalLayout {
+        alignment: center;
+        spacing: -root.time-size * 0.16;
+        LockDate { font-size: root.date-size; horizontal-alignment: center; }
+        LockTime { size: root.time-size; horizontal-alignment: center; }
+    }
+}
+
+/// Sidebar header: the same lock-screen treatment, left-aligned.
+export component ClockHeader {
+    VerticalLayout {
+        padding-left: 6px;
+        spacing: -11px;
+        LockDate { font-size: 15px; }
+        LockTime { size: 72px; }
+    }
+}

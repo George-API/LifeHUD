@@ -1,0 +1,108 @@
+import { Theme } from "theme.slint";
+import { HudState } from "state.slint";
+import { ClockStrip, ClockHeader } from "widgets/clock.slint";
+import { WeatherStrip, WeatherPanel } from "widgets/weather.slint";
+import { TodayStrip, TodayPanel } from "widgets/today.slint";
+import { NewsStrip, NewsPanel } from "widgets/news.slint";
+import { MediaStrip, MediaPanel } from "widgets/media.slint";
+import { Chrome } from "widgets/chrome.slint";
+
+/// The docked HUD surface. Its size and position are owned by the shell AppBar (see src/platform),
+/// so nothing here constrains the window: children are placed explicitly.
+export component HudWindow inherits Window {
+    title: "Life HUD";
+    no-frame: true;
+    background: transparent;
+    default-font-family: Theme.font;
+    preferred-width: 1200px;
+    preferred-height: 100px;
+
+    property <length> pad: 10px;
+    property <length> gap: 10px;
+
+    Rectangle { background: Theme.hud-tint; }
+
+    content := Rectangle {
+        width: root.width;
+        height: root.height;
+        x: HudState.transitioning && HudState.vertical ? -12px : 0px;
+        y: HudState.transitioning && !HudState.vertical ? -8px : 0px;
+        opacity: HudState.transitioning ? 0 : 1;
+        animate opacity { duration: 200ms; easing: ease-in-out; }
+        animate x, y { duration: 320ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    // ---------------------------------------------------------------- Top HUD
+    if !HudState.vertical : top := Rectangle {
+        property <length> clock-width: 250px;
+        property <length> side-width: (root.width - self.clock-width) / 2 - root.pad;
+        property <length> inner-height: root.height - 2 * root.pad;
+        property <bool> compact: root.width < 1560px;
+
+        Rectangle {
+            y: root.height - 1px;
+            height: 1px;
+            background: Theme.edge;
+        }
+
+        HorizontalLayout {
+            x: root.pad;
+            y: root.pad;
+            width: top.side-width;
+            height: top.inner-height;
+            spacing: root.gap;
+            WeatherStrip { compact: top.compact; horizontal-stretch: 0; }
+            TodayStrip { horizontal-stretch: 1; }
+        }
+
+        // Exactly centred on the screen, independent of the two halves.
+        ClockStrip {
+            x: (root.width - top.clock-width) / 2;
+            y: root.pad;
+            width: top.clock-width;
+            height: top.inner-height;
+        }
+
+        HorizontalLayout {
+            x: (root.width + top.clock-width) / 2;
+            y: root.pad;
+            width: top.side-width;
+            height: top.inner-height;
+            spacing: root.gap;
+            NewsStrip { horizontal-stretch: 1; }
+            MediaStrip { horizontal-stretch: 0; }
+            Chrome { vertical: false; width: 34px; horizontal-stretch: 0; }
+        }
+    }
+
+    // ---------------------------------------------------------------- Life Sidebar
+    if HudState.vertical : Rectangle {
+        Rectangle {
+            x: root.width - 1px;
+            width: 1px;
+            background: Theme.edge;
+        }
+
+        VerticalLayout {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            padding: root.pad + 2px;
+            padding-top: 16px;
+            spacing: 14px;
+
+            ClockHeader { }
+            // Cards in the user's chosen order. Today and News share whatever height is left;
+            // taller screens also get the hourly forecast.
+            for kind in HudState.sidebar-order : VerticalLayout {
+                vertical-stretch: kind == 2 ? 5 : kind == 3 ? 4 : 0;
+                if kind == 0 : WeatherPanel { show-hourly: root.height >= 1240px; }
+                if kind == 1 : MediaPanel { }
+                if kind == 2 : TodayPanel { vertical-stretch: 1; }
+                if kind == 3 : NewsPanel { vertical-stretch: 1; }
+            }
+            Chrome { vertical: true; height: 30px; }
+        }
+    }
+    }
+}

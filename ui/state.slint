@@ -1,0 +1,124 @@
+// The contract between Rust and the HUD: Rust writes data in, the UI calls callbacks out.
+
+import { Condition } from "weather-icon.slint";
+export { Condition }
+
+export struct HourData {
+    label: string,
+    temp: string,
+    condition: Condition,
+    day: bool,
+}
+
+export struct DayData {
+    label: string,
+    condition: Condition,
+    high: string,
+    low: string,
+    // Positions on the whole forecast's temperature range, 0..1.
+    low-pos: float,
+    high-pos: float,
+    marker-pos: float,
+    has-marker: bool,
+    low-color: color,
+    high-color: color,
+}
+
+export struct NewsData {
+    title: string,
+    age: string,
+    publisher: string,
+    url: string,
+}
+
+export struct TaskData {
+    id: string,
+    title: string,
+    done: bool,
+}
+
+export global HudState {
+    // Layout
+    in property <bool> vertical;
+    /// Sidebar card order: 0 weather, 1 music, 2 today, 3 news.
+    in property <[int]> sidebar-order: [0, 1, 2, 3];
+    /// True while the HUD morphs between layouts; content fades out and back in.
+    in property <bool> transitioning;
+
+    // Clock
+    in property <string> hours: "9";
+    in property <string> minutes: "41";
+    in property <string> period;
+    in property <string> weekday: "Saturday";
+    in property <string> month-day: "November 14";
+    in property <string> greeting: "Good afternoon";
+
+    // Weather
+    in property <bool> weather-ready;
+    in property <string> location;
+    in property <string> temperature;
+    in property <string> description;
+    in property <string> high-low;
+    in property <string> weather-status;
+    in property <string> weather-placeholder: "Loading weather…";
+    in property <Condition> condition: Condition.partly-cloudy;
+    in property <bool> is-day: true;
+    in property <[HourData]> hourly;
+    in property <[DayData]> daily;
+    in property <[DayData]> upcoming;
+    callback weather-clicked();
+
+    // Tasks
+    in property <[TaskData]> tasks;
+    in property <int> done-count;
+    in property <int> total-count;
+    in property <float> task-progress;
+    in property <string> task-summary: "Nothing planned yet";
+    in-out property <string> new-task;
+    callback add-task(string);
+    callback toggle-task(string);
+    callback remove-task(string);
+    callback clear-completed();
+
+    // Notes
+    in-out property <string> notes;
+    in property <string> notes-status;
+    in property <string> word-count;
+    callback notes-edited(string);
+
+    // Music
+    in property <bool> has-media;
+    in property <bool> is-playing;
+    in property <bool> is-spotify: true;
+    in property <bool> has-timeline;
+    in property <bool> can-previous;
+    in property <bool> can-next;
+    in property <string> track-title: "Not playing";
+    in property <string> track-artist: "Open Spotify to start listening";
+    in property <string> media-source: "SPOTIFY";
+    in property <float> media-progress;
+    in property <string> elapsed;
+    in property <string> remaining;
+    in property <image> artwork;
+    in property <bool> has-artwork;
+    in property <color> glow: transparent;
+    callback play-pause();
+    callback next-track();
+    callback previous-track();
+    callback open-spotify();
+
+    // News
+    /// 0 = Curated (left tab), 1 = Top (right tab).
+    in-out property <int> news-tab;
+    in property <string> curated-name: "Bloomberg Technology";
+    in property <string> top-name: "Google News";
+    in property <[NewsData]> news-curated;
+    in property <[NewsData]> news-top;
+    in property <string> news-placeholder: "Loading headlines…";
+    callback open-article(string);
+
+    // Chrome
+    callback open-settings();
+    callback toggle-layout();
+    callback hide-hud();
+}

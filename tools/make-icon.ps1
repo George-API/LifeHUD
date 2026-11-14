@@ -1,4 +1,4 @@
-# Generates src/LifeHUD/Assets/LifeHUD.ico (PNG-compressed multi-size icon).
+# Generates assets/lifehud.ico (PNG-compressed multi-size icon).
 # Usage: powershell -ExecutionPolicy Bypass -File tools/make-icon.ps1
 Add-Type -AssemblyName System.Drawing
 
@@ -49,7 +49,7 @@ $sizes = 16, 20, 24, 32, 48, 64, 256
 $images = @()
 foreach ($sz in $sizes) { $images += ,(New-IconPng $sz) }
 
-$out = Join-Path $PSScriptRoot "..\src\LifeHUD\Assets\LifeHUD.ico"
+$out = Join-Path $PSScriptRoot "..\assets\lifehud.ico"
 $fs = [System.IO.File]::Create($out)
 $bw = New-Object System.IO.BinaryWriter($fs)
 $bw.Write([UInt16]0); $bw.Write([UInt16]1); $bw.Write([UInt16]$sizes.Count)

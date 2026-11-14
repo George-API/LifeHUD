@@ -1,0 +1,609 @@
+import { Switch, Slider, ComboBox, LineEdit, Button, AboutSlint, Palette, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { StickerPattern } from "stickers.slint";
+
+export struct ThemeSwatch {
+    id: string,
+    name: string,
+    surface: color,
+    ambient-a: color,
+    ambient-b: color,
+    ambient-c: color,
+    card: color,
+    text: color,
+    accent: color,
+    selected: bool,
+    sticker: int,
+}
+
+export global SettingsState {
+    in-out property <int> page;
+
+    in-out property <bool> hud-visible: true;
+    in-out property <bool> open-at-login;
+
+    in-out property <bool> top-layout: true;
+    in-out property <bool> fit-windows: true;
+    in-out property <float> size-percent: 8.8;
+    in property <float> size-min: 7;
+    in property <float> size-max: 18;
+    in property <[string]> monitors: ["Display 1"];
+    in-out property <int> monitor-index;
+
+    in property <[ThemeSwatch]> themes;
+    in-out property <int> appearance;
+    in property <bool> appearance-enabled: true;
+    in-out property <bool> use-24h;
+    in-out property <bool> show-seconds;
+
+    in-out property <string> city;
+    in property <string> weather-status;
+    in-out property <int> units;
+
+    in-out property <bool> prefer-spotify: true;
+
+    in property <[string]> sidebar-names;
+    callback move-card(int, int);
+
+    in property <[string]> curated-sources;
+    in-out property <int> curated-index;
+    in property <[string]> top-sources;
+    in-out property <int> top-index;
+
+    in property <string> version: "0.1.0";
+
+    /// Something changed; Rust re-reads the named group of properties.
+    callback changed(string);
+    callback select-theme(string);
+    callback open-data-folder();
+}
+
+global Look {
+    out property <color> window: Theme.dark ? #1e1e20 : #f2f2f7;
+    out property <color> sidebar: Theme.dark ? #26262a : #e8e8ed;
+    out property <color> group: Theme.dark ? #2c2c2e : #ffffff;
+    out property <color> group-border: Theme.dark ? #ffffff0d : #0000000a;
+    out property <color> separator: Theme.dark ? #ffffff14 : #0000001a;
+    out property <color> label: Theme.dark ? #ffffffeb : #000000e0;
+    out property <color> secondary: Theme.dark ? #ffffff8c : #3c3c4399;
+    out property <color> hover: Theme.dark ? #ffffff0f : #0000000a;
+}
+
+component SidebarItem {
+    in property <string> label;
+    in property <image> icon;
+    in property <color> tint;
+    in property <bool> selected;
+    callback clicked;
+
+    height: 30px;
+
+    Rectangle {
+        border-radius: 6px;
+        background: root.selected ? Theme.accent : ta.has-hover ? Look.hover : transparent;
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        spacing: 9px;
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 5px;
+            background: root.tint;
+            Image { source: root.icon; width: 13px; height: 13px; colorize: white; }
+        }
+        Text {
+            text: root.label;
+            font-size: 13px;
+            color: root.selected ? Theme.on-accent : Look.label;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component Group inherits Rectangle {
+    background: Look.group;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Look.group-border;
+    VerticalLayout {
+        padding-left: 14px;
+        @children
+    }
+}
+
+component Row {
+    in property <string> label;
+    in property <string> detail;
+    in property <bool> last;
+
+    min-height: 44px;
+
+    HorizontalLayout {
+        padding-right: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.label; font-size: 13px; color: Look.label; }
+            if root.detail != "" : Text { text: root.detail; font-size: 11px; color: Look.secondary; wrap: word-wrap; }
+        }
+        HorizontalLayout {
+            alignment: end;
+            horizontal-stretch: 0;
+            @children
+        }
+    }
+    if !root.last : Rectangle {
+        y: root.height - 1px;
+        height: 1px;
+        background: Look.separator;
+    }
+}
+
+component OrderButton {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: 28px;
+    height: 28px;
+    Rectangle {
+        border-radius: 6px;
+        background: ta.has-hover && root.enabled ? Look.hover : transparent;
+    }
+    Image {
+        source: root.icon;
+        width: 15px;
+        height: 15px;
+        colorize: root.enabled ? Look.label : Look.secondary;
+        opacity: root.enabled ? 1 : 0.35;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component Footnote inherits Text {
+    font-size: 11px;
+    color: Look.secondary;
+    wrap: word-wrap;
+}
+
+component Segmented {
+    in property <[string]> items;
+    in-out property <int> index;
+    in property <bool> enabled: true;
+    callback changed(int);
+
+    height: 26px;
+    min-width: root.items.length * 66px;
+    opacity: root.enabled ? 1 : 0.4;
+
+    Rectangle {
+        border-radius: 7px;
+        background: Theme.dark ? #ffffff17 : #7676801f;
+    }
+    Rectangle {
+        x: 2px + root.index * (root.width - 4px) / max(1, root.items.length);
+        y: 2px;
+        width: (root.width - 4px) / max(1, root.items.length);
+        height: root.height - 4px;
+        border-radius: 6px;
+        background: Theme.dark ? #636366 : #ffffff;
+        drop-shadow-blur: 2px;
+        drop-shadow-offset-y: 1px;
+        drop-shadow-color: #00000026;
+        animate x { duration: 200ms; easing: ease-out; }
+    }
+    HorizontalLayout {
+        padding: 2px;
+        for item[i] in root.items : Rectangle {
+            Text {
+                text: item;
+                font-size: 12px;
+                font-weight: i == root.index ? 600 : 400;
+                color: Look.label;
+            }
+            TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    root.index = i;
+                    root.changed(i);
+                }
+            }
+        }
+    }
+}
+
+component LayoutTile {
+    in property <string> label;
+    in property <bool> top;
+    in property <bool> selected;
+    callback clicked;
+
+    VerticalLayout {
+        spacing: 8px;
+        Rectangle {
+            height: 96px;
+            border-radius: 9px;
+            border-width: root.selected ? 3px : 1px;
+            border-color: root.selected ? Theme.accent : Look.group-border;
+            background: @linear-gradient(135deg, #3f7bea 0%, #8a5cf6 60%, #e0679e 100%);
+            clip: true;
+            // Docked bar
+            Rectangle {
+                x: root.top ? 0 : 0;
+                y: 0;
+                width: root.top ? parent.width : 30px;
+                height: root.top ? 14px : parent.height;
+                background: #141418c8;
+            }
+            // A maximized window filling the rest
+            Rectangle {
+                x: root.top ? 0 : 30px;
+                y: root.top ? 14px : 0;
+                width: root.top ? parent.width : parent.width - 30px;
+                height: root.top ? parent.height - 14px : parent.height;
+                background: #f7f7fae6;
+            }
+        }
+        Text {
+            text: root.label;
+            font-size: 12px;
+            font-weight: root.selected ? 600 : 400;
+            color: Look.label;
+            horizontal-alignment: center;
+        }
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+component Swatch {
+    in property <ThemeSwatch> swatch;
+    callback clicked;
+
+    VerticalLayout {
+        spacing: 6px;
+        Rectangle {
+            height: 58px;
+            border-radius: 10px;
+            border-width: root.swatch.selected ? 3px : 0px;
+            border-color: Theme.accent;
+            Rectangle {
+                x: root.swatch.selected ? 4px : 0;
+                y: root.swatch.selected ? 4px : 0;
+                width: parent.width - (root.swatch.selected ? 8px : 0);
+                height: parent.height - (root.swatch.selected ? 8px : 0);
+                border-radius: root.swatch.selected ? 7px : 10px;
+                background: root.swatch.surface;
+                clip: true;
+                Rectangle { background: @linear-gradient(135deg, root.swatch.ambient-a 0%, root.swatch.ambient-b 50%, root.swatch.ambient-c 100%); }
+                if root.swatch.sticker > 0 : StickerPattern { width: parent.width; height: parent.height; set: root.swatch.sticker; ink: root.swatch.text; strength: 0.16; }
+                Text {
+                    y: 6px;
+                    text: "9:41";
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: root.swatch.text;
+                }
+                Rectangle {
+                    x: 8px;
+                    y: parent.height - self.height - 7px;
+                    width: parent.width - 16px;
+                    height: 14px;
+                    border-radius: 4px;
+                    background: root.swatch.card;
+                    Rectangle {
+                        x: 4px;
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: root.swatch.accent;
+                    }
+                }
+            }
+        }
+        Text {
+            text: root.swatch.name;
+            font-size: 11.5px;
+            color: Look.label;
+            horizontal-alignment: center;
+        }
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+component PageTitle inherits Text {
+    font-size: 22px;
+    font-weight: 700;
+    color: Look.label;
+}
+
+export component SettingsWindow inherits Window {
+    title: "Life HUD";
+    icon: @image-url("../assets/icon.png");
+    preferred-width: 780px;
+    preferred-height: 560px;
+    min-width: 680px;
+    min-height: 460px;
+    background: Look.window;
+    default-font-family: Theme.font;
+
+    property <bool> dark: Theme.dark;
+    init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    HorizontalLayout {
+        // ------------------------------------------------ Sidebar
+        Rectangle {
+            width: 210px;
+            background: Look.sidebar;
+            VerticalLayout {
+                padding: 12px;
+                padding-top: 18px;
+                spacing: 2px;
+                alignment: start;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-bottom: 14px;
+                    spacing: 10px;
+                    Image { source: @image-url("../assets/icon.png"); width: 28px; height: 28px; }
+                    Text { text: "Life HUD"; font-size: 15px; font-weight: 600; color: Look.label; vertical-alignment: center; }
+                }
+                SidebarItem { label: "General"; icon: @image-url("icons/gear.svg"); tint: #8e8e93; selected: SettingsState.page == 0; clicked => { SettingsState.page = 0; } }
+                SidebarItem { label: "Layout"; icon: @image-url("icons/sidebar-left.svg"); tint: #0a84ff; selected: SettingsState.page == 1; clicked => { SettingsState.page = 1; } }
+                SidebarItem { label: "Appearance"; icon: @image-url("icons/paintbrush.svg"); tint: #5e5ce6; selected: SettingsState.page == 2; clicked => { SettingsState.page = 2; } }
+                SidebarItem { label: "Weather"; icon: @image-url("icons/cloud.svg"); tint: #32ade6; selected: SettingsState.page == 3; clicked => { SettingsState.page = 3; } }
+                SidebarItem { label: "Music"; icon: @image-url("icons/music.svg"); tint: #ff375f; selected: SettingsState.page == 4; clicked => { SettingsState.page = 4; } }
+                SidebarItem { label: "News"; icon: @image-url("icons/newspaper.svg"); tint: #ff9f0a; selected: SettingsState.page == 5; clicked => { SettingsState.page = 5; } }
+                SidebarItem { label: "About"; icon: @image-url("icons/info.svg"); tint: #8e8e93; selected: SettingsState.page == 6; clicked => { SettingsState.page = 6; } }
+            }
+        }
+
+        // ------------------------------------------------ Content
+        ScrollView {
+            VerticalLayout {
+                padding: 28px;
+                padding-top: 22px;
+                spacing: 12px;
+                alignment: start;
+
+                // General
+                if SettingsState.page == 0 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "General"; }
+                    Group {
+                        Row {
+                            label: "Show Life HUD";
+                            Switch { checked <=> SettingsState.hud-visible; toggled => { SettingsState.changed("visibility"); } }
+                        }
+                        Row {
+                            label: "Open at login";
+                            last: true;
+                            Switch { checked <=> SettingsState.open-at-login; toggled => { SettingsState.changed("startup"); } }
+                        }
+                    }
+                    Group {
+                        Row {
+                            label: "Your data";
+                            detail: "Notes, tasks and settings stay on this PC.";
+                            last: true;
+                            Button { text: "Show in Explorer"; clicked => { SettingsState.open-data-folder(); } }
+                        }
+                    }
+                }
+
+                // Layout
+                if SettingsState.page == 1 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "Layout"; }
+                    HorizontalLayout {
+                        spacing: 16px;
+                        LayoutTile {
+                            label: "Top";
+                            top: true;
+                            selected: SettingsState.top-layout;
+                            clicked => { SettingsState.top-layout = true; SettingsState.changed("layout"); }
+                        }
+                        LayoutTile {
+                            label: "Sidebar";
+                            top: false;
+                            selected: !SettingsState.top-layout;
+                            clicked => { SettingsState.top-layout = false; SettingsState.changed("layout"); }
+                        }
+                    }
+                    Rectangle { height: 4px; }
+                    Group {
+                        Row {
+                            label: "Size";
+                            Slider {
+                                width: 200px;
+                                minimum: SettingsState.size-min;
+                                maximum: SettingsState.size-max;
+                                value <=> SettingsState.size-percent;
+                                changed => { SettingsState.changed("size"); }
+                            }
+                            Text {
+                                width: 40px;
+                                text: round(SettingsState.size-percent * 10) / 10 + "%";
+                                font-size: 12px;
+                                color: Look.secondary;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+                        }
+                        Row {
+                            label: "Fit open windows";
+                            detail: "Resize other windows to the space that's left.";
+                            Switch { checked <=> SettingsState.fit-windows; toggled => { SettingsState.changed("fit"); } }
+                        }
+                        Row {
+                            label: "Display";
+                            last: true;
+                            ComboBox {
+                                width: 220px;
+                                model: SettingsState.monitors;
+                                current-index <=> SettingsState.monitor-index;
+                                selected => { SettingsState.changed("monitor"); }
+                            }
+                        }
+                    }
+                    Text { text: "Sidebar order"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Group {
+                        for name[i] in SettingsState.sidebar-names : Row {
+                            label: name;
+                            last: i == SettingsState.sidebar-names.length - 1;
+                            OrderButton {
+                                icon: @image-url("icons/chevron-up.svg");
+                                enabled: i > 0;
+                                clicked => { SettingsState.move-card(i, -1); }
+                            }
+                            OrderButton {
+                                icon: @image-url("icons/chevron-down.svg");
+                                enabled: i < SettingsState.sidebar-names.length - 1;
+                                clicked => { SettingsState.move-card(i, 1); }
+                            }
+                        }
+                    }
+                }
+
+                // Appearance
+                if SettingsState.page == 2 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "Appearance"; }
+                    Rectangle {
+                        property <int> columns: 4;
+                        property <length> cell-gap: 12px;
+                        property <length> cell-width: (self.width - (self.columns - 1) * self.cell-gap) / self.columns;
+                        property <length> cell-height: 86px;
+                        height: ceil(SettingsState.themes.length / self.columns) * (self.cell-height + self.cell-gap);
+                        for swatch[i] in SettingsState.themes : Swatch {
+                            x: mod(i, parent.columns) * (parent.cell-width + parent.cell-gap);
+                            y: floor(i / parent.columns) * (parent.cell-height + parent.cell-gap);
+                            width: parent.cell-width;
+                            height: parent.cell-height;
+                            swatch: swatch;
+                            clicked => { SettingsState.select-theme(swatch.id); }
+                        }
+                    }
+                    Group {
+                        Row {
+                            label: "Mode";
+                            detail: SettingsState.appearance-enabled ? "" : "Set by the theme.";
+                            Segmented {
+                                width: 220px;
+                                items: ["Auto", "Light", "Dark"];
+                                enabled: SettingsState.appearance-enabled;
+                                index <=> SettingsState.appearance;
+                                changed => { SettingsState.changed("theme"); }
+                            }
+                        }
+                        Row {
+                            label: "24-hour time";
+                            Switch { checked <=> SettingsState.use-24h; toggled => { SettingsState.changed("clock"); } }
+                        }
+                        Row {
+                            label: "Show seconds";
+                            last: true;
+                            Switch { checked <=> SettingsState.show-seconds; toggled => { SettingsState.changed("clock"); } }
+                        }
+                    }
+                }
+
+                // Weather
+                if SettingsState.page == 3 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "Weather"; }
+                    Group {
+                        Row {
+                            label: "Location";
+                            LineEdit {
+                                width: 220px;
+                                placeholder-text: "Current Location";
+                                text <=> SettingsState.city;
+                                accepted => { SettingsState.changed("weather"); }
+                            }
+                        }
+                        Row {
+                            label: "Units";
+                            last: true;
+                            Segmented {
+                                width: 140px;
+                                items: ["°C", "°F"];
+                                index <=> SettingsState.units;
+                                changed => { SettingsState.changed("weather"); }
+                            }
+                        }
+                    }
+                    Footnote { text: SettingsState.weather-status; }
+                }
+
+                // Music
+                if SettingsState.page == 4 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "Music"; }
+                    Group {
+                        Row {
+                            label: "Prefer Spotify";
+                            detail: "When more than one app is playing.";
+                            last: true;
+                            Switch { checked <=> SettingsState.prefer-spotify; toggled => { SettingsState.changed("media"); } }
+                        }
+                    }
+                    Footnote { text: "Works with the Spotify desktop app. No sign-in needed."; }
+                }
+
+                // News
+                if SettingsState.page == 5 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "News"; }
+                    Text { text: "Curated"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Group {
+                        for source[i] in SettingsState.curated-sources : Rectangle {
+                            Row {
+                                label: source;
+                                last: i == SettingsState.curated-sources.length - 1;
+                                Image { source: @image-url("icons/check.svg"); width: 16px; height: 16px; colorize: Theme.accent; opacity: i == SettingsState.curated-index ? 1 : 0; }
+                            }
+                            TouchArea { clicked => { SettingsState.curated-index = i; SettingsState.changed("news"); } }
+                        }
+                    }
+                    Rectangle { height: 6px; }
+                    Text { text: "Top News"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Group {
+                        for source[i] in SettingsState.top-sources : Rectangle {
+                            Row {
+                                label: source;
+                                last: i == SettingsState.top-sources.length - 1;
+                                Image { source: @image-url("icons/check.svg"); width: 16px; height: 16px; colorize: Theme.accent; opacity: i == SettingsState.top-index ? 1 : 0; }
+                            }
+                            TouchArea { clicked => { SettingsState.top-index = i; SettingsState.changed("news"); } }
+                        }
+                    }
+                    Footnote { text: "Headlines come from each publisher's free public feed and open in your browser."; }
+                }
+                // About
+                if SettingsState.page == 6 : VerticalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    Rectangle { height: 16px; }
+                    HorizontalLayout {
+                        alignment: center;
+                        Image { source: @image-url("../assets/icon.png"); width: 72px; height: 72px; }
+                    }
+                    Text { text: "Life HUD"; font-size: 20px; font-weight: 700; color: Look.label; horizontal-alignment: center; }
+                    Text { text: "Version " + SettingsState.version; font-size: 12px; color: Look.secondary; horizontal-alignment: center; }
+                    Text { text: "Open source under the MIT License."; font-size: 12px; color: Look.secondary; horizontal-alignment: center; }
+                    Rectangle { height: 18px; }
+                    HorizontalLayout {
+                        alignment: center;
+                        AboutSlint { max-width: 260px; }
+                    }
+                }
+            }
+        }
+    }
+}

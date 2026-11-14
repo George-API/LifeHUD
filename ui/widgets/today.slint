@@ -1,0 +1,239 @@
+// "Today": tasks and notes share one card, split evenly by a hairline. Planning on one side,
+// thinking on the other.
+
+import { Theme } from "../theme.slint";
+import { Card, GhostLineEdit, GhostTextArea, IconButton, Overline, ProgressRing, SlimProgress, TaskCheck } from "../components.slint";
+import { HudState, TaskData } from "../state.slint";
+
+/// One task. The whole row is the touch target (tap anywhere to complete it); the circle animates,
+/// and a remove button appears on hover.
+component TaskRow {
+    in property <TaskData> task;
+    height: 24px;
+
+    row := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { HudState.toggle-task(root.task.id); }
+
+        Rectangle {
+            x: -6px;
+            width: parent.width + 12px;
+            border-radius: 6px;
+            background: row.has-hover ? Theme.fill : transparent;
+            animate background { duration: 120ms; }
+        }
+
+        HorizontalLayout {
+            spacing: 9px;
+            padding-right: 22px;
+            TaskCheck {
+                y: (parent.height - self.height) / 2;
+                checked: root.task.done;
+                toggled => { HudState.toggle-task(root.task.id); }
+            }
+            title := Text {
+                text: root.task.title;
+                font-size: 13px;
+                color: root.task.done ? Theme.text3 : Theme.text;
+                vertical-alignment: center;
+                overflow: elide;
+                animate color { duration: 200ms; }
+            }
+        }
+
+        // Strike-through exactly as wide as the title.
+        if root.task.done : Rectangle {
+            x: title.x;
+            y: parent.height / 2;
+            height: 1px;
+            width: min(title.preferred-width, title.width);
+            background: Theme.text3;
+        }
+
+        if row.has-hover : IconButton {
+            x: parent.width - self.width;
+            y: (parent.height - self.height) / 2;
+            size: 20px;
+            icon-size: 10px;
+            icon: @image-url("../icons/xmark.svg");
+            clicked => { HudState.remove-task(root.task.id); }
+        }
+    }
+}
+component AddBox {
+    height: 26px;
+    Rectangle {
+        border-radius: 7px;
+        background: Theme.input;
+    }
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 9px;
+        spacing: 7px;
+        Image {
+            source: @image-url("../icons/plus.svg");
+            width: 11px;
+            colorize: Theme.text3;
+        }
+        GhostLineEdit {
+            text <=> HudState.new-task;
+            placeholder: "Add a task";
+            accepted(t) => { HudState.add-task(t); }
+        }
+    }
+}
+
+/// "+ Add a task" as a quiet final row of the list (used in the slim Top HUD).
+component AddRow {
+    height: 22px;
+    HorizontalLayout {
+        spacing: 12px;
+        Rectangle {
+            width: 17px;
+            Image { source: @image-url("../icons/plus.svg"); width: 12px; colorize: Theme.text3; }
+        }
+        GhostLineEdit {
+            text <=> HudState.new-task;
+            placeholder: "Add a task";
+            accepted(t) => { HudState.add-task(t); }
+        }
+    }
+}
+
+component TaskList inherits Flickable {
+    in property <bool> inline-add;
+    in property <length> row-height: 24px;
+    content-height: list.preferred-height;
+    list := VerticalLayout {
+        alignment: start;
+        for t in HudState.tasks : TaskRow { task: t; height: root.row-height; }
+        if root.inline-add : AddRow { }
+    }
+}
+
+component Hairline inherits Rectangle {
+    background: Theme.divider;
+}
+
+/// Top HUD: progress ring + list on the left half, a scratchpad on the right half.
+export component TodayStrip inherits Card {
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 8px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+        spacing: 14px;
+
+        // Tasks
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            spacing: 12px;
+            Rectangle {
+                width: 40px;
+                ProgressRing {
+                    width: 40px;
+                    height: 40px;
+                    value: HudState.task-progress;
+                }
+                Text {
+                    text: HudState.total-count == 0 ? "0" : HudState.done-count + "/" + HudState.total-count;
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+            }
+            TaskList { inline-add: true; row-height: 21px; }
+        }
+
+        Hairline { width: 1px; }
+
+        // Notes
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 3px;
+            HorizontalLayout {
+                padding-right: 6px;
+                Overline { text: "NOTES"; }
+                Overline { text: HudState.notes-status; horizontal-alignment: right; font-weight: 400; }
+            }
+            GhostTextArea {
+                vertical-stretch: 1;
+                text <=> HudState.notes;
+                placeholder: "Jot something down…";
+                font-size: 12.5px;
+                edited(t) => { HudState.notes-edited(t); }
+            }
+        }
+    }
+}
+
+/// Sidebar: the checklist above, notes below, each taking half the card.
+export component TodayPanel inherits Card {
+    VerticalLayout {
+        padding: 16px;
+        padding-right: 10px;
+        spacing: 0;
+
+        HorizontalLayout {
+            padding-right: 6px;
+            VerticalLayout {
+                Text { text: "Today"; font-family: Theme.display-font; font-size: 15px; font-weight: 600; color: Theme.text; }
+                Text { text: HudState.task-summary; font-size: 12px; color: Theme.text2; }
+            }
+            if HudState.done-count > 0 : IconButton {
+                icon: @image-url("../icons/trash.svg");
+                icon-size: 14px;
+                clicked => { HudState.clear-completed(); }
+            }
+        }
+        Rectangle { height: 8px; }
+        HorizontalLayout {
+            padding-right: 6px;
+            SlimProgress { value: HudState.task-progress; color: Theme.accent; }
+        }
+        Rectangle { height: 8px; }
+        Rectangle {
+            vertical-stretch: 1;
+            TaskList { width: parent.width - 6px; x: 0; height: parent.height; }
+            if HudState.total-count == 0 : Text {
+                x: 0;
+                y: 2px;
+                text: "Nothing planned yet.";
+                font-size: 12.5px;
+                color: Theme.text3;
+            }
+        }
+        Rectangle { height: 6px; }
+        HorizontalLayout {
+            padding-right: 6px;
+            AddBox { }
+        }
+
+        Rectangle { height: 14px; }
+        HorizontalLayout {
+            padding-right: 6px;
+            Hairline { height: 1px; }
+        }
+        Rectangle { height: 12px; }
+
+        HorizontalLayout {
+            padding-right: 6px;
+            Text { text: "Notes"; font-family: Theme.display-font; font-size: 15px; font-weight: 600; color: Theme.text; }
+            Text {
+                text: HudState.notes-status != "" ? HudState.notes-status : HudState.word-count;
+                font-size: 11px;
+                color: Theme.text3;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+        }
+        Rectangle { height: 6px; }
+        GhostTextArea {
+            vertical-stretch: 1;
+            text <=> HudState.notes;
+            placeholder: "Jot something down…";
+            font-size: 13.5px;
+            edited(t) => { HudState.notes-edited(t); }
+        }
+    }
+}

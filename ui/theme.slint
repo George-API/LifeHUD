@@ -1,0 +1,41 @@
+// Design tokens. Every value is written from Rust (src/theme.rs) when the theme changes, so the
+// defaults below only matter for the live-preview tooling.
+
+export global Theme {
+    in-out property <bool> dark: true;
+    /// Mood themes carry a pair of stickers (0 = none).
+    in-out property <int> sticker-set: 0;
+
+    // HUD surfaces
+    // Ambient light: three stops of a soft diagonal gradient over the glass.
+    in-out property <color> ambient-a: transparent;
+    in-out property <color> ambient-b: transparent;
+    in-out property <color> ambient-c: transparent;
+    out property <brush> hud-tint: @linear-gradient(135deg, ambient-a 0%, ambient-b 50%, ambient-c 100%);
+    in-out property <color> edge: #ffffff1a;
+    in-out property <color> card: #ffffff12;
+    in-out property <color> card-border: #ffffff14;
+
+    // Ink
+    in-out property <color> text: #ffffff;
+    in-out property <color> text2: #ffffffb8;
+    in-out property <color> text3: #ffffff78;
+
+    // Controls
+    in-out property <color> fill: #ffffff14;
+    in-out property <color> fill-hover: #ffffff22;
+    in-out property <color> input: #ffffff10;
+    in-out property <color> divider: #ffffff18;
+    in-out property <color> track: #ffffff2e;
+
+    // Accent
+    in-out property <color> accent: #4cc2ff;
+    in-out property <color> on-accent: #000000;
+    in-out property <color> play-bg: #fffffff2;
+    in-out property <color> play-fg: #1a1a1e;
+    out property <brush> cloud: dark ? @linear-gradient(180deg, #ffffff 0%, #c3ccda 100%) : @linear-gradient(180deg, #c4cedc 0%, #7e8da5 100%);
+
+    // Type
+    out property <string> font: "Segoe UI";
+    out property <string> display-font: "Segoe UI";
+}

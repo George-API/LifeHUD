@@ -1,7 +1,3 @@
-bin/
-obj/
-publish/
-.vs/
-*.user
-*.suo
-.idea/
+target/
+*.tmp
+

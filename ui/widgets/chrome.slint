@@ -1,0 +1,29 @@
+import { Theme } from "../theme.slint";
+import { IconButton } from "../components.slint";
+import { HudState } from "../state.slint";
+
+/// The HUD's own controls stay quiet until you reach for them.
+export component Chrome {
+    in property <bool> vertical;
+
+    hover := TouchArea { }
+
+    if !root.vertical : VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        opacity: hover.has-hover ? 1 : 0.72;
+        animate opacity { duration: 200ms; }
+        IconButton { size: 32px; icon-size: 17px; icon: @image-url("../icons/gear.svg"); clicked => { HudState.open-settings(); } }
+        IconButton { size: 32px; icon-size: 17px; icon: @image-url("../icons/sidebar-left.svg"); clicked => { HudState.toggle-layout(); } }
+    }
+
+    if root.vertical : HorizontalLayout {
+        alignment: end;
+        spacing: 2px;
+        opacity: hover.has-hover ? 1 : 0.72;
+        animate opacity { duration: 200ms; }
+        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/minus.svg"); clicked => { HudState.hide-hud(); } }
+        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/sidebar-top.svg"); clicked => { HudState.toggle-layout(); } }
+        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/gear.svg"); clicked => { HudState.open-settings(); } }
+    }
+}

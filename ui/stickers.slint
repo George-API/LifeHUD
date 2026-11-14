@@ -1,0 +1,39 @@
+// Die-cut sticker art for the mood themes. Each set has two stickers (slot 0 and 1).
+
+export component Sticker inherits Image {
+    in property <int> set;
+    in property <int> slot;
+
+    image-fit: contain;
+    source: root.set == 1 ? (root.slot == 0 ? @image-url("stickers/hearth-mug.svg") : @image-url("stickers/hearth-candle.svg"))
+        : root.set == 2 ? (root.slot == 0 ? @image-url("stickers/atelier-palette.svg") : @image-url("stickers/atelier-brush.svg"))
+        : root.set == 3 ? (root.slot == 0 ? @image-url("stickers/metro-skyline.svg") : @image-url("stickers/metro-lamp.svg"))
+        : root.set == 4 ? (root.slot == 0 ? @image-url("stickers/evergreen-pine.svg") : @image-url("stickers/evergreen-mushroom.svg"))
+        : root.set == 5 ? (root.slot == 0 ? @image-url("stickers/neon-bolt.svg") : @image-url("stickers/neon-heart.svg"))
+        : root.set == 6 ? (root.slot == 0 ? @image-url("stickers/nebula-planet.svg") : @image-url("stickers/nebula-rocket.svg"))
+        : @image-url("stickers/nebula-planet.svg"); // unused: callers only show a Sticker when set > 0
+}
+/// A quiet, embossed-looking pattern of the theme's motifs: tinted to the theme ink at very low
+/// opacity, staggered like a brick bond, each motif slightly turned. Clipped by its card.
+export component StickerPattern {
+    in property <int> set;
+    in property <color> ink;
+    in property <float> strength: 0.06;
+    property <length> step: 56px;
+    property <int> cols: ceil(root.width / root.step) + 1;
+
+    for i in 96 : Sticker {
+        property <int> cx: mod(i, root.cols);
+        property <int> cy: floor(i / root.cols);
+        set: root.set;
+        slot: mod(self.cy + self.cx, 2);
+        width: 20px;
+        height: 20px;
+        x: self.cx * root.step + (mod(self.cy, 2) == 1 ? root.step / 2 : 0px) - 12px;
+        y: self.cy * root.step * 0.78 + 6px;
+        visible: self.y < root.height + 4px;
+        transform-rotation: (mod(i * 37, 40) - 20) * 1deg;
+        colorize: root.ink;
+        opacity: root.strength;
+    }
+}

@@ -1,0 +1,352 @@
+// Reusable HUD building blocks. These are deliberately chromeless: they sit on glass, so every
+// surface is a translucent tint from the Theme rather than an opaque control background.
+
+import { Theme } from "theme.slint";
+import { StickerPattern } from "stickers.slint";
+
+export component Card inherits Rectangle {
+    background: Theme.card;
+    border-color: Theme.card-border;
+    border-width: 1px;
+    border-radius: 14px;
+    clip: true;
+
+    // Mood themes texture their cards with a faint pattern of the theme's motifs.
+    if Theme.sticker-set > 0 : StickerPattern {
+        width: parent.width;
+        height: parent.height;
+        set: Theme.sticker-set;
+        ink: Theme.text;
+        strength: Theme.dark ? 0.07 : 0.09;
+    }
+}
+
+export component Overline inherits Text {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    color: Theme.text3;
+    overflow: elide;
+}
+
+export component IconButton {
+    in property <image> icon;
+    in property <length> size: 26px;
+    in property <length> icon-size: 14px;
+    in property <bool> enabled: true;
+    in property <angle> rotation: 0deg;
+    callback clicked;
+
+    width: root.size;
+    height: root.size;
+
+    bg := Rectangle {
+        border-radius: 7px;
+        background: ta.has-hover && root.enabled ? Theme.fill-hover : transparent;
+        animate background { duration: 120ms; }
+    }
+
+    Image {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: ta.has-hover && root.enabled ? Theme.text : Theme.text2;
+        opacity: root.enabled ? 1 : 0.35;
+        transform-rotation: root.rotation;
+        transform-scale: ta.pressed ? 0.86 : 1;
+        animate transform-scale { duration: 140ms; easing: ease-out; }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PlayButton {
+    in property <bool> playing;
+    in property <length> size: 34px;
+    callback clicked;
+
+    width: root.size;
+    height: root.size;
+
+    Rectangle {
+        border-radius: self.height / 2;
+        background: Theme.play-bg;
+        opacity: ta.has-hover ? 0.88 : 1;
+        transform-scale: ta.pressed ? 0.88 : 1;
+        animate transform-scale { duration: 160ms; easing: ease-out; }
+
+        Image {
+            source: root.playing ? @image-url("icons/pause.svg") : @image-url("icons/play.svg");
+            width: root.size * 0.42;
+            height: root.size * 0.42;
+            x: (parent.width - self.width) / 2 + (root.playing ? 0 : root.size * 0.03);
+            colorize: Theme.play-fg;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PillButton {
+    in property <string> text;
+    callback clicked;
+
+    min-height: 26px;
+    horizontal-stretch: 0;
+
+    Rectangle {
+        border-radius: self.height / 2;
+        background: ta.has-hover ? Theme.fill-hover : Theme.fill;
+        animate background { duration: 120ms; }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            text: root.text;
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Single-line input with a placeholder. Enter fires `accepted`; Escape clears and drops focus.
+export component GhostLineEdit {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <length> font-size: 12.5px;
+    callback accepted(string);
+
+    min-height: 18px;
+
+    if root.text == "" && input.preedit-text == "" : Text {
+        x: 0;
+        width: root.width;
+        text: root.placeholder;
+        color: Theme.text3;
+        font-size: root.font-size;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    input := TextInput {
+        width: root.width;
+        text <=> root.text;
+        color: Theme.text;
+        font-size: root.font-size;
+        vertical-alignment: center;
+        single-line: true;
+        selection-background-color: Theme.accent.with-alpha(0.4);
+        selection-foreground-color: Theme.text;
+        accepted => {
+            root.accepted(self.text);
+        }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                self.text = "";
+                self.clear-focus();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+/// Multi-line, scrolling, chromeless text area that keeps the caret in view.
+export component GhostTextArea {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <length> font-size: 13px;
+    callback edited(string);
+
+    if root.text == "" : Text {
+        x: 0;
+        y: 0;
+        width: root.width;
+        text: root.placeholder;
+        color: Theme.text3;
+        font-size: root.font-size;
+        overflow: elide;
+    }
+
+    flick := Flickable {
+        width: root.width;
+        height: root.height;
+        content-width: self.width;
+        content-height: max(self.height, input.preferred-height);
+
+        input := TextInput {
+            width: flick.width - 6px;
+            text <=> root.text;
+            color: Theme.text;
+            font-size: root.font-size;
+            single-line: false;
+            wrap: word-wrap;
+            selection-background-color: Theme.accent.with-alpha(0.4);
+            selection-foreground-color: Theme.text;
+            edited => { root.edited(self.text); }
+            cursor-position-changed(pos) => {
+                if pos.y + flick.content-y < 0px {
+                    flick.content-y = min(0px, -pos.y);
+                } else if pos.y + flick.content-y > flick.height - root.font-size * 1.5 {
+                    flick.content-y = min(0px, flick.height - pos.y - root.font-size * 1.5);
+                }
+            }
+        }
+    }
+
+    // Slim scroll indicator, only when content overflows.
+    if input.preferred-height > root.height : Rectangle {
+        x: root.width - 3px;
+        width: 3px;
+        height: max(16px, root.height * root.height / input.preferred-height);
+        y: -flick.content-y / (input.preferred-height - root.height) * (root.height - self.height);
+        border-radius: 1.5px;
+        background: Theme.track;
+    }
+}
+
+/// Round checkbox: ring → accent disc with a check that springs in.
+export component TaskCheck {
+    in property <bool> checked;
+    callback toggled;
+
+    width: 17px;
+    height: 17px;
+
+    Rectangle {
+        border-radius: self.width / 2;
+        border-width: 1.5px;
+        border-color: ta.has-hover ? Theme.text2 : Theme.text3;
+        opacity: root.checked ? 0 : 1;
+        animate opacity { duration: 120ms; }
+    }
+
+    Rectangle {
+        border-radius: self.width / 2;
+        background: Theme.accent;
+        opacity: root.checked ? 1 : 0;
+        transform-scale: root.checked ? 1 : 0.4;
+        animate opacity { duration: 120ms; }
+        animate transform-scale { duration: 320ms; easing: cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        Image {
+            source: @image-url("icons/check.svg");
+            width: 13px;
+            height: 13px;
+            colorize: Theme.on-accent;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+}
+
+export component SlimProgress {
+    in property <float> value;
+    in property <color> color: Theme.text;
+
+    height: 3px;
+
+    Rectangle {
+        border-radius: 1.5px;
+        background: Theme.track;
+    }
+
+    Rectangle {
+        x: 0;
+        width: clamp(root.value, 0, 1) * root.width;
+        border-radius: 1.5px;
+        background: root.color;
+        animate width { duration: 300ms; easing: ease-out; }
+    }
+}
+
+export component ProgressRing {
+    in property <float> value;
+    in property <length> thickness: 4px;
+
+    property <float> shown: clamp(root.value, 0, 1);
+    animate shown { duration: 520ms; easing: ease-out; }
+    property <float> t: root.thickness / min(root.width, root.height) * 100;
+    property <float> r: 50 - root.t / 2;
+
+    Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: Theme.track;
+        stroke-width: root.thickness;
+        commands: "M " + (50 - root.r) + " 50 A " + root.r + " " + root.r + " 0 1 1 " + (50 + root.r) + " 50 A " + root.r + " " + root.r + " 0 1 1 " + (50 - root.r) + " 50";
+    }
+
+    if root.shown > 0.002 : Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: Theme.accent;
+        stroke-width: root.thickness;
+        stroke-line-cap: round;
+        commands: root.shown >= 0.999
+            ? "M 50 " + (50 - root.r) + " A " + root.r + " " + root.r + " 0 1 1 50 " + (50 + root.r) + " A " + root.r + " " + root.r + " 0 1 1 50 " + (50 - root.r)
+            : "M 50 " + (50 - root.r) + " A " + root.r + " " + root.r + " 0 " + (root.shown > 0.5 ? "1" : "0") + " 1 "
+              + (50 + root.r * sin(root.shown * 360deg)) + " " + (50 - root.r * cos(root.shown * 360deg));
+    }
+}
+
+/// A day's low→high temperature span placed on the whole forecast's range (positions are 0..1).
+export component RangeBar {
+    in property <float> low;
+    in property <float> high;
+    in property <float> marker;
+    in property <bool> has-marker;
+    in property <color> low-color;
+    in property <color> high-color;
+
+    height: 8px;
+
+    Rectangle {
+        y: (root.height - 4px) / 2;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.track;
+    }
+
+    Rectangle {
+        x: root.low * root.width;
+        width: max(4px, (root.high - root.low) * root.width);
+        y: (root.height - 4px) / 2;
+        height: 4px;
+        border-radius: 2px;
+        background: @linear-gradient(90deg, root.low-color 0%, root.high-color 100%);
+    }
+
+    if root.has-marker : Rectangle {
+        x: clamp(root.marker * root.width - 3.5px, root.low * root.width, root.high * root.width - 7px);
+        width: 7px;
+        height: 7px;
+        border-radius: 3.5px;
+        background: white;
+        border-width: 1.5px;
+        border-color: Theme.track;
+    }
+}

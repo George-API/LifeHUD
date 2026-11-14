@@ -1,0 +1,157 @@
+import { Theme } from "../theme.slint";
+import { Card, Overline } from "../components.slint";
+import { HudState, NewsData } from "../state.slint";
+
+/// Two quiet text tabs: Curated | Top.
+component Tabs {
+    in property <length> font-size: 11px;
+    HorizontalLayout {
+        spacing: 12px;
+        for label[i] in ["Curated", "Top"] : Rectangle {
+            width: t.preferred-width;
+            t := Text {
+                text: label;
+                font-size: root.font-size;
+                font-weight: i == HudState.news-tab ? 700 : 500;
+                color: i == HudState.news-tab ? Theme.text : Theme.text3;
+                animate color { duration: 150ms; }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1.5px;
+                border-radius: 1px;
+                background: i == HudState.news-tab ? Theme.accent : transparent;
+                animate background { duration: 150ms; }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { HudState.news-tab = i; }
+            }
+        }
+    }
+}
+
+component Headline {
+    in property <NewsData> item;
+    in property <bool> two-line;
+
+    height: root.two-line ? 60px : 22px;
+
+    Rectangle {
+        x: -6px;
+        width: root.width + 12px;
+        border-radius: 6px;
+        background: ta.has-hover ? Theme.fill : transparent;
+        animate background { duration: 120ms; }
+    }
+
+    if !root.two-line : HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: root.item.title;
+            font-size: 12.5px;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.item.age;
+            font-size: 11px;
+            color: Theme.text3;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
+
+    if root.two-line : VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.item.title;
+            font-size: 13px;
+            color: Theme.text;
+            wrap: word-wrap;
+            overflow: elide;
+            max-height: 34px;
+        }
+        Text {
+            text: root.item.publisher != "" && root.item.age != "" ? root.item.publisher + " · " + root.item.age
+                : root.item.publisher != "" ? root.item.publisher : root.item.age;
+            font-size: 11px;
+            color: Theme.text3;
+            overflow: elide;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { HudState.open-article(root.item.url); }
+    }
+}
+
+component Headlines inherits Flickable {
+    in property <bool> two-line;
+    in property <[NewsData]> items;
+    content-height: list.preferred-height;
+    list := VerticalLayout {
+        alignment: start;
+        for n[i] in root.items : VerticalLayout {
+            if i > 0 : Rectangle { height: 1px; background: Theme.divider; }
+            Headline { item: n; two-line: root.two-line; }
+        }
+    }
+}
+
+component Feed {
+    in property <bool> two-line;
+    property <[NewsData]> items: HudState.news-tab == 0 ? HudState.news-curated : HudState.news-top;
+    Headlines { width: root.width; height: root.height; items: root.items; two-line: root.two-line; }
+    if root.items.length == 0 : Text {
+        x: 0;
+        y: root.two-line ? 4px : (root.height - self.preferred-height) / 2;
+        width: root.width;
+        text: HudState.news-placeholder;
+        font-size: 12.5px;
+        color: Theme.text3;
+        wrap: word-wrap;
+    }
+}
+
+/// Top HUD: tabs and source on one line, headlines below.
+export component NewsStrip inherits Card {
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 8px;
+        padding-bottom: 6px;
+        spacing: 3px;
+        HorizontalLayout {
+            Tabs { }
+            Overline {
+                text: HudState.news-tab == 0 ? HudState.curated-name : HudState.top-name;
+                font-weight: 400;
+                horizontal-alignment: right;
+            }
+        }
+        Feed { vertical-stretch: 1; }
+    }
+}
+
+export component NewsPanel inherits Card {
+    VerticalLayout {
+        padding: 16px;
+        padding-bottom: 10px;
+        spacing: 6px;
+        HorizontalLayout {
+            Text { text: "News"; font-family: Theme.display-font; font-size: 15px; font-weight: 600; color: Theme.text; }
+            Tabs { font-size: 12px; y: (parent.height - self.height) / 2; }
+        }
+        Text {
+            text: HudState.news-tab == 0 ? HudState.curated-name : HudState.top-name;
+            font-size: 11px;
+            color: Theme.text3;
+        }
+        Feed { vertical-stretch: 1; two-line: true; }
+    }
+}
