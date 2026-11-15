@@ -496,12 +496,14 @@ export component SettingsWindow inherits Window {
                                 width: 200px;
                                 minimum: SettingsState.size-min;
                                 maximum: SettingsState.size-max;
+                                step: 0.5;
                                 value <=> SettingsState.size-percent;
                                 changed => { SettingsState.changed("size"); }
                             }
                             Text {
                                 width: 40px;
-                                text: round(SettingsState.size-percent * 10) / 10 + "%";
+                                // What gets saved: the nearest half percent.
+                                text: round(SettingsState.size-percent * 2) / 2 + "%";
                                 font-size: 12px;
                                 color: Look.secondary;
                                 horizontal-alignment: right;

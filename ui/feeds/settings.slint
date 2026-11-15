@@ -20,7 +20,6 @@ export struct ArrangeCard {
     name: string,
     y: float,
     h: float,
-    px: int,
     tight: bool,
 }
 
@@ -294,10 +293,10 @@ component SideArranger {
                     overflow: elide;
                 }
             }
-            if parent.height >= 40px : Text {
+            if card.tight && parent.height >= 40px : Text {
                 x: 7px;
                 y: parent.height - self.height - 5px;
-                text: card.px + " px" + (card.tight ? " · short" : "");
+                text: "Short on space";
                 font-size: 10px;
                 color: ArrangeLook.ink2;
             }

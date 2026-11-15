@@ -142,7 +142,6 @@ fn populate_arrange(st: &FeedSettings, s: &Settings) {
                 name: widget_name(&p.id).into(),
                 y: p.y / h,
                 h: p.h / h,
-                px: p.h.round() as i32,
                 tight: p.tight,
             })
             .collect(),
@@ -164,7 +163,6 @@ fn populate_arrange(st: &FeedSettings, s: &Settings) {
                 name: widget_name(&id).into(),
                 y: x,
                 h: w,
-                px: 0,
                 tight: false,
             })
             .collect(),
@@ -271,7 +269,7 @@ pub fn populate(sw: &SettingsWindow, s: &Settings) {
             .iter()
             .map(|h| {
                 let detail =
-                    if h.exchange.is_empty() { h.name.clone() } else { format!("{} Â· {}", h.name, h.exchange) };
+                    if h.exchange.is_empty() { h.name.clone() } else { format!("{} · {}", h.name, h.exchange) };
                 row(&h.symbol, &h.symbol, &detail, true)
             })
             .collect(),
@@ -535,7 +533,7 @@ fn wire_stocks(st: &FeedSettings) {
                         .into_iter()
                         .filter(|s| !s.is_empty())
                         .collect::<Vec<_>>()
-                        .join(" Â· ");
+                        .join(" · ");
                     (x.symbol.clone(), detail)
                 })
                 .collect();

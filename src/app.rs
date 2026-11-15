@@ -73,6 +73,9 @@ pub struct App {
     last_minute: Cell<u16>,
     clock_timer: Timer,
     save_timer: Timer,
+    /// Refits windows once the Size slider settles, against the work areas from before the drag.
+    size_timer: Timer,
+    size_before: RefCell<Option<Vec<(String, RECT)>>>,
     notes_timer: Timer,
     /// Edit Widgets: the widget list before each change, newest last.
     edit_undo: RefCell<Vec<Vec<String>>>,
@@ -112,6 +115,8 @@ impl App {
             last_minute: Cell::new(u16::MAX),
             clock_timer: Timer::default(),
             save_timer: Timer::default(),
+            size_timer: Timer::default(),
+            size_before: RefCell::new(None),
             notes_timer: Timer::default(),
             edit_undo: RefCell::new(Vec::new()),
             notes_status_timer: Timer::default(),
@@ -1642,11 +1647,19 @@ impl App {
         let st = sw.global::<SettingsState>();
         match key {
             "visibility" => self.set_hud_visible(st.get_hud_visible()),
-            "startup" => startup::set_enabled(st.get_open_at_login()),
+            "startup" => {
+                startup::set_enabled(st.get_open_at_login());
+                // Show what Windows actually has, in case the change didn't take.
+                st.set_open_at_login(startup::is_enabled());
+            }
             "fit" => self.settings.borrow_mut().fit_windows = st.get_fit_windows(),
             "layout" => self.set_layout(if st.get_top_layout() { Layout::Top } else { Layout::Left }),
             "size" => {
+                // The slider fires on every pixel of a drag; only a new half-percent step moves the HUD.
                 let v = (st.get_size_percent() * 2.0).round() / 2.0;
+                if v == self.settings.borrow().size_percent() {
+                    return;
+                }
                 {
                     let mut s = self.settings.borrow_mut();
                     match s.layout {
@@ -1655,9 +1668,17 @@ impl App {
                     }
                     s.normalize();
                 }
-                let before = self.work_areas();
+                self.size_before.borrow_mut().get_or_insert_with(|| self.work_areas());
                 self.reposition();
-                self.reflow_after(before);
+                // Refit other windows once, after the drag settles, rather than on every step.
+                let w = Rc::downgrade(self);
+                self.size_timer.start(TimerMode::SingleShot, Duration::from_millis(300), move || {
+                    if let Some(a) = w.upgrade()
+                        && let Some(before) = a.size_before.borrow_mut().take()
+                    {
+                        a.reflow_after(before);
+                    }
+                });
             }
             "monitor" => {
                 let list = monitors::all();
