@@ -12,41 +12,41 @@ export component WeatherIcon {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 29 50 A 21 21 0 1 1 71 50 A 21 21 0 1 1 29 50 Z";
-        fill: @radial-gradient(circle, #ffe06b 0%, #ffb21f 100%);
+        fill: @radial-gradient(circle, #fde7a6 0%, #f2c766 100%);
     }
     if root.condition == Condition.clear && root.day : Path {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 78 50 L 86 50 M 69.8 69.8 L 75.46 75.46 M 50 78 L 50 86 M 30.2 69.8 L 24.54 75.46 M 22 50 L 14 50 M 30.2 30.2 L 24.54 24.54 M 50 22 L 50 14 M 69.8 30.2 L 75.46 24.54";
-        stroke: #ffc12e;
-        stroke-width: root.u * 5.5;
+        stroke: #eec872;
+        stroke-width: root.u * 4.6;
         stroke-line-cap: round;
     }
     if root.condition == Condition.clear && !root.day : Path {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 50.34 24 A 26 26 0 1 0 74.44 58.88 A 21.32 21.32 0 0 1 50.34 24 Z";
-        fill: @linear-gradient(135deg, #f4f1e4 0%, #c9c4b0 100%);
+        fill: @linear-gradient(135deg, #ebe8dd 0%, #c6c1b2 100%);
     }
     if root.condition == Condition.partly-cloudy && root.day : Path {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 60 36 L 68 36 M 53.56 51.56 L 59.21 57.21 M 38 58 L 38 66 M 22.44 51.56 L 16.79 57.21 M 16 36 L 8 36 M 22.44 20.44 L 16.79 14.79 M 38 14 L 38 6 M 53.56 20.44 L 59.21 14.79";
-        stroke: #ffc12e;
-        stroke-width: root.u * 5;
+        stroke: #eec872;
+        stroke-width: root.u * 4.2;
         stroke-line-cap: round;
     }
     if root.condition == Condition.partly-cloudy && root.day : Path {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 23 36 A 15 15 0 1 1 53 36 A 15 15 0 1 1 23 36 Z";
-        fill: @radial-gradient(circle, #ffe06b 0%, #ffb21f 100%);
+        fill: @radial-gradient(circle, #fde7a6 0%, #f2c766 100%);
     }
     if root.condition == Condition.partly-cloudy && !root.day : Path {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 38.24 18 A 18 18 0 1 0 54.92 42.14 A 14.76 14.76 0 0 1 38.24 18 Z";
-        fill: @linear-gradient(135deg, #f4f1e4 0%, #c9c4b0 100%);
+        fill: @linear-gradient(135deg, #ebe8dd 0%, #c6c1b2 100%);
     }
     if root.condition == Condition.partly-cloudy : Path {
         width: root.width; height: root.height;
@@ -92,7 +92,7 @@ export component WeatherIcon {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 34 72 L 32 80 M 52 72 L 50 80 M 70 72 L 68 80";
-        stroke: #7cc8ff;
+        stroke: #9cc3e0;
         stroke-width: root.u * 4.5;
         stroke-line-cap: round;
     }
@@ -106,8 +106,8 @@ export component WeatherIcon {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 34 70 L 29 88 M 52 70 L 47 88 M 70 70 L 65 88";
-        stroke: #4fb7ff;
-        stroke-width: root.u * 5.5;
+        stroke: #80b2d8;
+        stroke-width: root.u * 5.0;
         stroke-line-cap: round;
     }
     if root.condition == Condition.snow : Path {
@@ -120,7 +120,7 @@ export component WeatherIcon {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 28 76 A 4 4 0 1 1 36 76 A 4 4 0 1 1 28 76 Z M 46 84 A 4 4 0 1 1 54 84 A 4 4 0 1 1 46 84 Z M 64 76 A 4 4 0 1 1 72 76 A 4 4 0 1 1 64 76 Z M 37 92 A 4 4 0 1 1 45 92 A 4 4 0 1 1 37 92 Z M 55 92 A 4 4 0 1 1 63 92 A 4 4 0 1 1 55 92 Z";
-        fill: #a8ddff;
+        fill: #c2dcee;
     }
     if root.condition == Condition.thunder : Path {
         width: root.width; height: root.height;
@@ -132,6 +132,6 @@ export component WeatherIcon {
         width: root.width; height: root.height;
         viewbox-width: 100; viewbox-height: 100;
         commands: "M 54 62 L 40 82 L 50 82 L 45 98 L 64 74 L 53 74 L 60 62 Z";
-        fill: @linear-gradient(180deg, #ffe04d 0%, #ffa726 100%);
+        fill: @linear-gradient(180deg, #f6dc8e 0%, #e9b765 100%);
     }
 }

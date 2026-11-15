@@ -176,6 +176,9 @@ impl Worker {
                 Err(e) => {
                     // Network trouble: keep showing the last snapshot and retry later.
                     storage::log(format!("geocoding failed: {e}"));
+                    (self.sink)(Update::Status(format!(
+                        "Couldn't look up “{city}”. Check your connection; Life HUD will try again."
+                    )));
                     None
                 }
             };

@@ -1,7 +1,8 @@
-# Pre-launch review
+# Review
 
-Review of v0.1.0 before open-sourcing. All numbers were measured on Windows 11 (build 26200), 2560×1440,
-with Spotify playing.
+Measurements and review notes. The first sections are the v0.1.0 pre-launch review, kept as a baseline;
+[Since 0.1.0](#since-010) has current numbers. All measured on Windows 11 (build 26200), 2560×1440 at
+164 Hz, with Spotify playing.
 
 ## Performance
 
@@ -81,11 +82,39 @@ Checked by hand:
 - **Bounded input.** Response bodies are capped at 4 MB, with a 15 s timeout. A feed that fails to parse
   is logged and skipped.
 
+## Since 0.1.0
+
+Five more widgets, Edit Widgets, the Search & AI panel, per-app volume and "now watching" made the app
+bigger, so the v0.1.0 table above no longer describes it. Current numbers:
+
+| | Now | Notes |
+|---|---|---|
+| Single exe | 18 MB | Release profile as above |
+| Private memory / working set | ~50 MB / ~90 MB | Sidebar, four widgets |
+| CPU with music playing | ~0.5% of one core | Steady state, sampled two minutes after launch: 0.4–0.6%. The first minute after a launch is higher while feeds and images load |
+| Layout switch | 167 fps, no dropped frames | 94 frames in 563 ms; logged per fold in `lifehud.log` |
+| Tests | 120 passing | Plus 7 ignored live-network tests (`cargo test -- --ignored`) |
+| Dependencies | 0 known vulnerabilities | `cargo audit`, 576 crates. 6 "unmaintained" notices, none compiled into the Windows binary |
+
+Notable changes to how it works:
+
+- **Layout switch.** Paced by the compositor's vblank (`DwmFlush`) on a small thread instead of a
+  ~15.6 ms Windows timer. The fold uses a jerk-free curve chosen by simulating every frame. Widgets
+  leave the frame during the fold and are laid out once when the glass lands.
+- **Network only when visible.** Feed widgets fetch through a shared poller that runs only while the
+  widget is on screen, and follows rate limits (Reddit's `x-ratelimit-*` headers, for example).
+- **Install on first run.** Per-user, no admin. The relaunch goes through the shell so the new process
+  doesn't inherit the caller's console or pipes.
+- **Accessibility.** Every icon button, menu item, tab and slider has a screen-reader label, and Edit
+  Widgets has non-drag equivalents.
+
 ## Known limitations
 
-- Spotify control is limited to what Windows media controls expose: play/pause, next and previous. There
-  is no seek, like or shuffle.
 - Moving windows that belong to elevated (administrator) apps is blocked by Windows.
 - Only one display hosts the HUD at a time.
-- There is no installer yet. `tools/install.ps1` is a per-user install, and the binary is unsigned.
-- Feed URLs are public endpoints controlled by their publishers and may change.
+- Releases are unsigned until a code-signing certificate is set up (see [RELEASING.md](RELEASING.md)),
+  so SmartScreen warns on first run.
+- "Now watching" needs the video in its window's active tab; if the site can't be told apart, nothing is
+  shown.
+- Reddit allows anonymous clients about one request a minute, so its tabs refresh slowly.
+- Feed URLs and the sports, stocks and Netflix endpoints are public but unofficial, and may change.

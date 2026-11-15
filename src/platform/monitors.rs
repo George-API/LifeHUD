@@ -1,4 +1,5 @@
 use windows::Win32::Foundation::{LPARAM, RECT};
+use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::core::BOOL;
@@ -55,6 +56,16 @@ pub fn all() -> Vec<Monitor> {
     let mut list: Vec<Monitor> = handles.into_iter().filter_map(query).collect();
     list.sort_by_key(|m| (!m.primary, m.bounds.left, m.bounds.top));
     list
+}
+
+/// Blocks until the compositor's next frame, so animation steps land once per display refresh
+/// (60, 120, 144 Hz…) instead of on Windows' coarse ~15.6 ms timer. Worker threads only.
+pub fn wait_for_vblank() {
+    let started = std::time::Instant::now();
+    // DwmFlush returns at once when nothing is waiting to be composed; don't spin then.
+    if unsafe { DwmFlush() }.is_err() || started.elapsed() < std::time::Duration::from_millis(1) {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
 
 pub fn find(device: Option<&str>) -> Option<Monitor> {

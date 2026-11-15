@@ -22,6 +22,8 @@ const ID_TOP: usize = 2;
 const ID_SIDE: usize = 3;
 const ID_SETTINGS: usize = 4;
 const ID_QUIT: usize = 5;
+const ID_CHAT: usize = 6;
+const ID_EDIT: usize = 7;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TrayEvent {
@@ -30,6 +32,8 @@ pub enum TrayEvent {
     TopLayout,
     SidebarLayout,
     Settings,
+    Chat,
+    EditWidgets,
     Quit,
 }
 
@@ -184,7 +188,9 @@ unsafe fn show_menu(hwnd: HWND) {
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         add(ID_TOP, "Top", state.top_layout);
         add(ID_SIDE, "Sidebar", !state.top_layout);
+        add(ID_EDIT, "Edit Widgets…", false);
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        add(ID_CHAT, "Search & Ask…", false);
         add(ID_SETTINGS, "Settings…", false);
         add(ID_QUIT, "Quit Life HUD", false);
 
@@ -201,6 +207,8 @@ unsafe fn show_menu(hwnd: HWND) {
             ID_TOP => Some(TrayEvent::TopLayout),
             ID_SIDE => Some(TrayEvent::SidebarLayout),
             ID_SETTINGS => Some(TrayEvent::Settings),
+            ID_CHAT => Some(TrayEvent::Chat),
+            ID_EDIT => Some(TrayEvent::EditWidgets),
             ID_QUIT => Some(TrayEvent::Quit),
             _ => None,
         };

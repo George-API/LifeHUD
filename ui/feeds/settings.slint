@@ -1,0 +1,886 @@
+// Settings pages for choosing widgets (Layout) and configuring the feed widgets. Rust side:
+// src/feeds/settings.rs.
+
+import { Switch } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Look, Group, Row, OrderButton, Footnote, PageTitle, Segmented, PushButton, PopupSelect, TextField } from "../settings-kit.slint";
+import { DragState } from "../drag.slint";
+
+/// A generic settings list row.
+export struct OptionRow {
+    id: string,
+    title: string,
+    detail: string,
+    on: bool,
+}
+
+/// One card in the Sidebar preview; `y` and `h` are fractions of the column's height.
+export struct ArrangeCard {
+    id: string,
+    name: string,
+    y: float,
+    h: float,
+    px: int,
+    tight: bool,
+}
+
+/// A widget in an arrange palette. `place` is "Left" or "Right" for a Top HUD slot in use.
+export struct ArrangeChip {
+    id: string,
+    name: string,
+    detail: string,
+    place: string,
+}
+
+export global FeedSettings {
+    // Layout: the HUD's one widget list (both views)
+    in property <[OptionRow]> sidebar;
+    in property <[OptionRow]> available;
+    callback move-card(int, int);
+    callback remove-card(int);
+    callback add-card(string);
+
+    // Arrange editor (Widgets page)
+    in-out property <int> arrange-mode;
+    in property <bool> top-active: true;
+    in property <float> side-ratio: 0.33;
+    in property <float> side-header: 0.1;
+    in property <[ArrangeCard]> side-cards;
+    in property <string> side-note;
+    /// Widgets not on the HUD.
+    in property <[ArrangeChip]> side-palette;
+    /// The Top HUD preview: `y` and `h` are each widget's left and width, as fractions of the bar.
+    in property <[ArrangeCard]> top-cards;
+    /// All four places are taken.
+    in property <bool> hud-full;
+    callback insert-card(string, int);
+    callback place-card(int, int);
+    /// Start Edit Widgets mode on the HUD itself.
+    callback edit-on-hud();
+    pure callback side-drop-index(float) -> int;
+    pure callback top-drop-index(float) -> int;
+
+    // Sports
+    in property <[OptionRow]> leagues;
+    in property <[OptionRow]> favorites;
+    in-out property <string> team-query;
+    in property <[OptionRow]> team-results;
+    in property <string> team-status;
+    callback toggle-league(string);
+    callback remove-favorite(string);
+    callback search-teams(string);
+    callback add-favorite(string);
+
+    // YouTube
+    in property <[OptionRow]> channels;
+    in-out property <string> channel-input;
+    in property <string> channel-status;
+    in-out property <bool> popout: true;
+    /// 0 in the widget, 1 pop-out, 2 browser.
+    in-out property <int> play-mode;
+    callback set-play-mode(int);
+    callback add-channel(string);
+    callback remove-channel(string);
+    callback set-popout(bool);
+
+    // Reddit
+    in property <[OptionRow]> subreddits;
+    /// Ready-made subreddits not followed yet (r/classicwow, r/gaming, …).
+    in property <[OptionRow]> reddit-presets;
+    in-out property <string> subreddit-input;
+    in property <string> subreddit-status;
+    in-out property <int> reddit-sort;
+    callback add-subreddit(string);
+    callback remove-subreddit(string);
+    callback set-reddit-sort(int);
+
+    // Netflix
+    in-out property <bool> netflix-non-english: true;
+    in-out property <bool> netflix-in-widget: true;
+    callback set-netflix-in-widget(bool);
+    callback set-netflix-non-english(bool);
+
+    // Stocks
+    in property <[OptionRow]> watchlist;
+    in-out property <string> stock-query;
+    in property <[OptionRow]> stock-results;
+    in property <string> stock-status;
+    in property <[OptionRow]> indices;
+    callback search-stocks(string);
+    callback add-stock(string);
+    callback remove-stock(string);
+    callback move-stock(int, int);
+    callback toggle-index(string);
+}
+
+component SectionTitle inherits Text {
+    font-size: 13px;
+    font-weight: 600;
+    color: Look.label;
+}
+
+/// Widget icons for the arrange editor (paths relative to this file).
+global ArrangeLook {
+    pure public function icon(wid: string) -> image {
+        return wid == "weather" ? @image-url("../icons/cloud.svg")
+            : wid == "music" ? @image-url("../icons/music.svg")
+            : wid == "today" ? @image-url("../icons/check.svg")
+            : wid == "news" ? @image-url("../icons/newspaper.svg")
+            : wid == "sports" ? @image-url("../icons/sports.svg")
+            : wid == "youtube" ? @image-url("../icons/youtube.svg")
+            : wid == "reddit" ? @image-url("../icons/reddit.svg")
+            : wid == "netflix" ? @image-url("../icons/netflix.svg")
+            : wid == "stocks" ? @image-url("../icons/stocks.svg")
+            : @image-url("../icons/widgets.svg");
+    }
+    /// The preview's "desktop": a quiet wallpaper so the glass cards read as the HUD does.
+    out property <brush> desk: Theme.dark
+        ? @linear-gradient(165deg, #2b3047 0%, #33304a 55%, #3d2f45 100%)
+        : @linear-gradient(165deg, #dce4f2 0%, #e4e0f1 55%, #eedfec 100%);
+    out property <color> glass: Theme.dark ? #ffffff17 : #ffffffb3;
+    out property <color> glass-hover: Theme.dark ? #ffffff24 : #ffffffe6;
+    out property <color> glass-border: Theme.dark ? #ffffff1f : #0000000f;
+    out property <color> ink: Theme.dark ? #ffffffeb : #000000d9;
+    out property <color> ink2: Theme.dark ? #ffffff8c : #0000007a;
+    out property <color> tile: Theme.dark ? #ffffff1a : #0000000f;
+}
+
+/// What a draggable widget looks like in a palette (and as the drag ghost).
+component ChipFace inherits Rectangle {
+    in property <string> wid;
+    in property <string> name;
+    in property <string> badge;
+    in property <bool> hot;
+    in property <bool> faded;
+    height: 36px;
+    border-radius: 9px;
+    background: root.hot ? Look.hover : Look.window;
+    border-width: 1px;
+    border-color: Look.separator;
+    opacity: root.faded ? 0.35 : 1;
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 10px;
+        spacing: 8px;
+        Rectangle {
+            width: 22px;
+            height: 22px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 6px;
+            background: ArrangeLook.tile;
+            Image { source: ArrangeLook.icon(root.wid); width: 14px; height: 14px; colorize: Look.label; }
+        }
+        Text {
+            text: root.name;
+            font-size: 12px;
+            font-weight: 600;
+            color: Look.label;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        if root.badge != "" : Text {
+            text: root.badge;
+            font-size: 11px;
+            font-weight: 600;
+            color: Theme.accent;
+            vertical-alignment: center;
+        }
+    }
+}
+
+/// The floating copy of whatever is being dragged. The software renderer ignores transforms, so
+/// "lifted" is a shadow and a slight offset.
+component DragGhost inherits ChipFace {
+    width: 150px;
+    background: Look.menu;
+    drop-shadow-blur: 16px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: #00000059;
+    opacity: 1;
+}
+
+/// The Sidebar column to scale, with the cards stacked as the HUD stacks them, and the widgets that
+/// aren't in it. Drag a widget in, drag cards to reorder, drag a card out to remove it.
+component SideArranger {
+    property <length> col-h: 440px;
+    property <length> col-w: clamp(self.col-h * FeedSettings.side-ratio, 132px, 210px);
+    property <length> pal-x: self.col-w + 28px;
+    property <length> chip-h: 36px;
+    property <length> chip-gap: 6px;
+    property <int> count: FeedSettings.side-cards.length;
+    property <bool> over-col: drag.dragging && drag.px < self.col-w + 20px;
+    property <bool> over-pal: drag.dragging && drag.px >= self.pal-x - 14px;
+    property <int> insert-at: self.over-col ? FeedSettings.side-drop-index(clamp(drag.py / self.col-h, 0, 1)) : -1;
+    // Dropping a card where it already is changes nothing, so no line for it.
+    property <bool> show-line: self.insert-at >= 0
+        && !(drag.kind == 1 && (self.insert-at == drag.from || self.insert-at == drag.from + 1));
+    property <length> line-y: self.count == 0 ? FeedSettings.side-header * self.col-h + 7px
+        : self.insert-at >= 0 && self.insert-at < self.count ? FeedSettings.side-cards[self.insert-at].y * self.col-h - 7px
+        : (FeedSettings.side-cards[self.count - 1].y + FeedSettings.side-cards[self.count - 1].h) * self.col-h + 7px;
+
+    height: max(self.col-h, 24px + FeedSettings.side-palette.length * (self.chip-h + self.chip-gap));
+
+    drag := DragState { }
+
+    function drop() {
+        if drag.kind == 1 && self.over-col && self.show-line {
+            FeedSettings.place-card(drag.from, self.insert-at);
+        } else if drag.kind == 1 && self.over-pal && self.count > 1 {
+            FeedSettings.remove-card(drag.from);
+        } else if drag.kind == 2 && self.over-col && !FeedSettings.hud-full {
+            FeedSettings.insert-card(drag.wid, self.insert-at);
+        }
+    }
+
+    // ------------------------------------------------------------ the column
+    column := Rectangle {
+        x: 0;
+        y: 0;
+        width: root.col-w;
+        height: root.col-h;
+        border-radius: 12px;
+        clip: true;
+        background: ArrangeLook.desk;
+        border-width: 1px;
+        border-color: drag.dragging && root.over-col ? Theme.accent : Look.separator;
+
+        // The clock header, not movable.
+        Text {
+            x: 10px;
+            y: 6px;
+            text: "9:41";
+            font-size: clamp(FeedSettings.side-header * root.col-h * 0.55, 14px, 34px);
+            font-weight: 700;
+            color: ArrangeLook.ink;
+        }
+
+        for card[i] in FeedSettings.side-cards : Rectangle {
+            property <bool> lifted: drag.dragging && drag.kind == 1 && drag.from == i;
+            x: 6px;
+            y: card.y * root.col-h;
+            width: root.col-w - 12px;
+            height: max(card.h * root.col-h, 4px);
+            border-radius: min(8px, self.height / 2);
+            background: ta.has-hover && !drag.dragging ? ArrangeLook.glass-hover : ArrangeLook.glass;
+            border-width: 1px;
+            border-color: ArrangeLook.glass-border;
+            opacity: self.lifted ? 0.3 : 1;
+            accessible-role: button;
+            accessible-label: card.name + ", position " + (i + 1) + " of " + root.count + (card.tight ? ", short on space" : "");
+            accessible-action-decrement => { if i > 0 { FeedSettings.move-card(i, -1); } }
+            accessible-action-increment => { if i < root.count - 1 { FeedSettings.move-card(i, 1); } }
+
+            if parent.height >= 18px : HorizontalLayout {
+                x: 0;
+                y: 0;
+                height: min(parent.height, 22px);
+                padding-left: 7px;
+                padding-right: 22px;
+                spacing: 5px;
+                Image {
+                    source: ArrangeLook.icon(card.id);
+                    width: 11px;
+                    height: 11px;
+                    y: (parent.height - self.height) / 2;
+                    colorize: ArrangeLook.ink;
+                }
+                Text {
+                    text: card.name;
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: ArrangeLook.ink;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            if parent.height >= 40px : Text {
+                x: 7px;
+                y: parent.height - self.height - 5px;
+                text: card.px + " px" + (card.tight ? " · short" : "");
+                font-size: 10px;
+                color: ArrangeLook.ink2;
+            }
+            ta := TouchArea {
+                mouse-cursor: drag.dragging ? MouseCursor.grabbing : MouseCursor.grab;
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                        drag.press(1, i, card.id, card.name, parent.x + self.mouse-x, parent.y + self.mouse-y);
+                    } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                        if drag.dragging { root.drop(); }
+                        drag.reset();
+                    } else if e.kind == PointerEventKind.cancel {
+                        drag.reset();
+                    }
+                }
+                moved => { drag.move(parent.x + self.mouse-x, parent.y + self.mouse-y); }
+            }
+            if root.count > 1 && parent.height >= 18px : Rectangle {
+                x: parent.width - 19px;
+                y: 3px;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                background: rm.has-hover ? Look.control-pressed : transparent;
+                opacity: drag.dragging ? 0 : rm.has-hover || ta.has-hover ? 1 : 0.45;
+                accessible-role: button;
+                accessible-label: "Remove " + card.name + " from the Sidebar";
+                accessible-action-default => { FeedSettings.remove-card(i); }
+                Image { source: @image-url("../icons/xmark.svg"); width: 8px; height: 8px; colorize: ArrangeLook.ink; }
+                rm := TouchArea { mouse-cursor: pointer; clicked => { FeedSettings.remove-card(i); } }
+            }
+        }
+
+        // The minimise/search/settings row.
+        Rectangle {
+            x: root.col-w - 46px;
+            y: root.col-h - 14px;
+            width: 36px;
+            height: 4px;
+            border-radius: 2px;
+            background: ArrangeLook.ink2;
+            opacity: 0.5;
+        }
+
+        if drag.dragging && root.show-line : Rectangle {
+            x: 4px;
+            y: root.line-y - 1.5px;
+            width: root.col-w - 8px;
+            height: 3px;
+            border-radius: 1.5px;
+            background: Theme.accent;
+        }
+    }
+
+    // ------------------------------------------------------------ the palette
+    if drag.dragging && drag.kind == 1 : Rectangle {
+        x: root.pal-x - 8px;
+        y: 0;
+        width: root.width - root.pal-x + 8px;
+        height: root.height;
+        border-radius: 10px;
+        background: root.over-pal && root.count > 1 ? Look.hover : transparent;
+        border-width: 1px;
+        border-color: root.over-pal && root.count > 1 ? Look.tertiary : Look.separator;
+        Text {
+            text: root.count > 1 ? "Drop here to remove" : "The HUD needs at least one widget";
+            font-size: 12px;
+            color: Look.secondary;
+        }
+    }
+    Text {
+        x: root.pal-x;
+        y: 0;
+        text: FeedSettings.side-palette.length == 0 ? "Every widget is on the HUD."
+            : FeedSettings.hud-full ? "Remove one to add another." : "Not on the HUD";
+        font-size: 11px;
+        color: Look.secondary;
+        opacity: drag.dragging && drag.kind == 1 ? 0 : 1;
+    }
+    for chip[i] in FeedSettings.side-palette : ChipFace {
+        x: root.pal-x;
+        y: 22px + i * (root.chip-h + root.chip-gap);
+        width: min(root.width - root.pal-x, 260px);
+        wid: chip.id;
+        name: chip.name;
+        hot: cta.has-hover && !drag.dragging && !FeedSettings.hud-full;
+        faded: FeedSettings.hud-full || (drag.dragging && drag.kind == 2 && drag.wid == chip.id);
+        opacity: drag.dragging && drag.kind == 1 ? 0 : self.faded ? 0.45 : 1;
+        accessible-role: button;
+        accessible-label: "Add " + chip.name + " to the HUD";
+        accessible-enabled: !FeedSettings.hud-full;
+        accessible-action-default => { FeedSettings.add-card(chip.id); }
+        cta := TouchArea {
+            enabled: !FeedSettings.hud-full;
+            mouse-cursor: FeedSettings.hud-full ? MouseCursor.default : drag.dragging ? MouseCursor.grabbing : MouseCursor.grab;
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                    drag.press(2, i, chip.id, chip.name, parent.x + self.mouse-x, parent.y + self.mouse-y);
+                } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                    // A plain click adds it at the bottom.
+                    if drag.dragging { root.drop(); } else { FeedSettings.add-card(chip.id); }
+                    drag.reset();
+                } else if e.kind == PointerEventKind.cancel {
+                    drag.reset();
+                }
+            }
+            moved => { drag.move(parent.x + self.mouse-x, parent.y + self.mouse-y); }
+        }
+    }
+
+    if drag.dragging : DragGhost {
+        x: drag.px - 24px;
+        y: drag.py - 14px;
+        wid: drag.wid;
+        name: drag.name;
+    }
+}
+
+/// The Top HUD to scale: the HUD's one widget list split around the clock, two each side. Drag to
+/// reorder, drag a widget in from below, drag one out (or click its ×) to remove it.
+component TopArranger {
+    property <length> bar-h: 64px;
+    property <length> chip-h: 36px;
+    property <length> gap: 8px;
+    property <int> columns: self.width >= 460px ? 4 : 3;
+    property <length> chip-w: (self.width - (self.columns - 1) * self.gap) / self.columns;
+    property <length> pal-y: self.bar-h + 34px;
+    property <length> inner: self.width - 12px;
+    property <int> count: FeedSettings.top-cards.length;
+    property <bool> over-bar: drag.dragging && drag.py < self.bar-h + 18px;
+    property <bool> over-pal: drag.dragging && drag.py >= self.bar-h + 18px;
+    property <bool> can-insert: drag.kind == 1 || !FeedSettings.hud-full;
+    property <int> insert-at: self.over-bar && self.can-insert
+        ? FeedSettings.top-drop-index(clamp((drag.px - 6px) / self.inner, 0, 1)) : -1;
+    property <bool> show-line: self.insert-at >= 0
+        && !(drag.kind == 1 && (self.insert-at == drag.from || self.insert-at == drag.from + 1));
+    property <length> line-x: self.count == 0 ? 6px
+        : self.insert-at >= 0 && self.insert-at < self.count ? 6px + FeedSettings.top-cards[self.insert-at].y * self.inner - 4px
+        : 6px + (FeedSettings.top-cards[self.count - 1].y + FeedSettings.top-cards[self.count - 1].h) * self.inner + 4px;
+
+    height: self.pal-y + max(1, ceil(FeedSettings.side-palette.length / self.columns)) * (self.chip-h + self.gap) - self.gap;
+
+    drag := DragState { }
+
+    function drop() {
+        if drag.kind == 1 && self.over-bar && self.show-line {
+            FeedSettings.place-card(drag.from, self.insert-at);
+        } else if drag.kind == 1 && self.over-pal && self.count > 1 {
+            FeedSettings.remove-card(drag.from);
+        } else if drag.kind == 2 && self.over-bar && self.insert-at >= 0 {
+            FeedSettings.insert-card(drag.wid, self.insert-at);
+        }
+    }
+
+    bar := Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.bar-h;
+        border-radius: 12px;
+        clip: true;
+        background: ArrangeLook.desk;
+        border-width: 1px;
+        border-color: root.over-bar && root.can-insert ? Theme.accent : Look.separator;
+
+        // The clock, centred and fixed.
+        Rectangle {
+            x: 6px + root.inner * 0.42;
+            y: 6px;
+            width: root.inner * 0.16;
+            height: root.bar-h - 12px;
+            border-radius: 8px;
+            background: ArrangeLook.glass;
+            opacity: 0.6;
+            accessible-role: text;
+            accessible-label: "Clock, fixed in the middle";
+            Text { text: "9:41"; font-size: 20px; font-weight: 700; color: ArrangeLook.ink; }
+        }
+
+        for card[i] in FeedSettings.top-cards : cell := Rectangle {
+            property <bool> lifted: drag.dragging && drag.kind == 1 && drag.from == i;
+            x: 6px + card.y * root.inner;
+            y: 6px;
+            width: card.h * root.inner;
+            height: root.bar-h - 12px;
+            border-radius: 8px;
+            background: cta.has-hover && !drag.dragging ? ArrangeLook.glass-hover : ArrangeLook.glass;
+            border-width: 1px;
+            border-color: ArrangeLook.glass-border;
+            opacity: self.lifted ? 0.3 : 1;
+            accessible-role: button;
+            accessible-label: card.name + ", " + (i < 2 ? "left" : "right") + " of the clock, position " + (i + 1) + " of " + root.count;
+            accessible-action-decrement => { if i > 0 { FeedSettings.move-card(i, -1); } }
+            accessible-action-increment => { if i < root.count - 1 { FeedSettings.move-card(i, 1); } }
+            HorizontalLayout {
+                alignment: center;
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 5px;
+                Image {
+                    source: ArrangeLook.icon(card.id);
+                    width: 13px;
+                    height: 13px;
+                    y: (parent.height - self.height) / 2;
+                    colorize: ArrangeLook.ink;
+                }
+                Text {
+                    text: card.name;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: ArrangeLook.ink;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            cta := TouchArea {
+                mouse-cursor: drag.dragging ? MouseCursor.grabbing : MouseCursor.grab;
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                        drag.press(1, i, card.id, card.name, parent.x + self.mouse-x, parent.y + self.mouse-y);
+                    } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                        if drag.dragging { root.drop(); }
+                        drag.reset();
+                    } else if e.kind == PointerEventKind.cancel {
+                        drag.reset();
+                    }
+                }
+                moved => { drag.move(parent.x + self.mouse-x, parent.y + self.mouse-y); }
+            }
+            if root.count > 1 : Rectangle {
+                x: parent.width - 19px;
+                y: 3px;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                background: rm.has-hover ? Look.control-pressed : transparent;
+                opacity: drag.dragging ? 0 : rm.has-hover || cta.has-hover ? 1 : 0.45;
+                accessible-role: button;
+                accessible-label: "Remove " + card.name;
+                accessible-action-default => { FeedSettings.remove-card(i); }
+                Image { source: @image-url("../icons/xmark.svg"); width: 8px; height: 8px; colorize: ArrangeLook.ink; }
+                rm := TouchArea { mouse-cursor: pointer; clicked => { FeedSettings.remove-card(i); } }
+            }
+        }
+
+        if drag.dragging && root.show-line : Rectangle {
+            x: clamp(root.line-x - 1.5px, 3px, root.width - 6px);
+            y: 6px;
+            width: 3px;
+            height: root.bar-h - 12px;
+            border-radius: 1.5px;
+            background: Theme.accent;
+        }
+    }
+
+    // The palette, or a drop zone while a widget is dragged off the bar.
+    if drag.dragging && drag.kind == 1 : Rectangle {
+        x: 0;
+        y: root.bar-h + 10px;
+        width: root.width;
+        height: root.height - root.bar-h - 10px;
+        border-radius: 10px;
+        background: root.over-pal && root.count > 1 ? Look.hover : transparent;
+        border-width: 1px;
+        border-color: root.over-pal && root.count > 1 ? Look.tertiary : Look.separator;
+        Text {
+            text: root.count > 1 ? "Drop here to remove" : "The HUD needs at least one widget";
+            font-size: 12px;
+            color: Look.secondary;
+        }
+    }
+    Text {
+        x: 0;
+        y: root.bar-h + 12px;
+        text: FeedSettings.side-palette.length == 0 ? "Every widget is on the HUD."
+            : FeedSettings.hud-full ? "The HUD holds four widgets. Remove one to add another."
+            : "Drag a widget onto the bar, or click one to add it at the end.";
+        font-size: 11px;
+        color: Look.secondary;
+        opacity: drag.dragging && drag.kind == 1 ? 0 : 1;
+    }
+    for chip[i] in FeedSettings.side-palette : ChipFace {
+        x: mod(i, root.columns) * (root.chip-w + root.gap);
+        y: root.pal-y + floor(i / root.columns) * (root.chip-h + root.gap);
+        width: root.chip-w;
+        wid: chip.id;
+        name: chip.name;
+        hot: pta.has-hover && !drag.dragging && !FeedSettings.hud-full;
+        faded: FeedSettings.hud-full || (drag.dragging && drag.kind == 2 && drag.wid == chip.id);
+        opacity: drag.dragging && drag.kind == 1 ? 0 : self.faded ? 0.45 : 1;
+        accessible-role: button;
+        accessible-label: "Add " + chip.name + " to the HUD";
+        accessible-enabled: !FeedSettings.hud-full;
+        accessible-action-default => { FeedSettings.add-card(chip.id); }
+        pta := TouchArea {
+            enabled: !FeedSettings.hud-full;
+            mouse-cursor: FeedSettings.hud-full ? MouseCursor.default : drag.dragging ? MouseCursor.grabbing : MouseCursor.grab;
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                    drag.press(2, i, chip.id, chip.name, parent.x + self.mouse-x, parent.y + self.mouse-y);
+                } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                    if drag.dragging { root.drop(); } else { FeedSettings.add-card(chip.id); }
+                    drag.reset();
+                } else if e.kind == PointerEventKind.cancel {
+                    drag.reset();
+                }
+            }
+            moved => { drag.move(parent.x + self.mouse-x, parent.y + self.mouse-y); }
+        }
+    }
+
+    if drag.dragging : DragGhost {
+        x: clamp(drag.px - 24px, 0px, root.width - self.width);
+        y: drag.py - 14px;
+        wid: drag.wid;
+        name: drag.name;
+    }
+}
+
+/// Widgets page: a to-scale preview of the Top HUD or the Sidebar to arrange widgets in.
+export component WidgetLayout inherits VerticalLayout {
+    spacing: 10px;
+    init => { FeedSettings.arrange-mode = FeedSettings.top-active ? 0 : 1; }
+    HorizontalLayout {
+        spacing: 10px;
+        SectionTitle { text: "Arrange"; vertical-alignment: center; horizontal-stretch: 1; }
+        PushButton { text: "Edit on the HUD"; clicked => { FeedSettings.edit-on-hud(); } }
+        Segmented {
+            width: 190px;
+            items: ["Top HUD", "Sidebar"];
+            index <=> FeedSettings.arrange-mode;
+        }
+    }
+    Footnote {
+        text: "Up to four widgets, the same in both layouts: the Top HUD puts two each side of the clock, "
+            + "the Sidebar stacks them. Drag to reorder, drag a widget in, or drag one out to remove it.";
+    }
+    Rectangle {
+        background: Look.group;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Look.group-border;
+        VerticalLayout {
+            padding: 14px;
+            if FeedSettings.arrange-mode == 0 : TopArranger { }
+            if FeedSettings.arrange-mode == 1 : SideArranger { }
+        }
+    }
+    if FeedSettings.arrange-mode == 1 : Footnote { text: FeedSettings.side-note; }
+}
+
+export component SportsPage inherits VerticalLayout {
+    spacing: 12px;
+    PageTitle { text: "Sports"; }
+    SectionTitle { text: "Leagues"; }
+    Group {
+        for lg[i] in FeedSettings.leagues : Row {
+            label: lg.title;
+            last: i == FeedSettings.leagues.length - 1;
+            Switch { checked: lg.on; toggled => { FeedSettings.toggle-league(lg.id); } }
+        }
+    }
+    SectionTitle { text: "Your teams"; }
+    Group {
+        for t in FeedSettings.favorites : Row {
+            label: t.title;
+            detail: t.detail;
+            OrderButton {
+                icon: @image-url("../icons/trash.svg");
+                clicked => { FeedSettings.remove-favorite(t.id); }
+            }
+        }
+        Row {
+            label: FeedSettings.favorites.length == 0 ? "Add a team" : "Add another";
+            last: true;
+            TextField {
+                width: 220px;
+                placeholder-text: "Search by name or city";
+                text <=> FeedSettings.team-query;
+                accepted => { FeedSettings.search-teams(self.text); }
+                edited => { FeedSettings.search-teams(self.text); }
+            }
+        }
+    }
+    if FeedSettings.team-results.length > 0 : Group {
+        for t[i] in FeedSettings.team-results : Row {
+            label: t.title;
+            detail: t.detail;
+            last: i == FeedSettings.team-results.length - 1;
+            OrderButton {
+                icon: @image-url("../icons/plus.svg");
+                clicked => { FeedSettings.add-favorite(t.id); }
+            }
+        }
+    }
+    Footnote {
+        text: FeedSettings.team-status != "" ? FeedSettings.team-status
+            : "Your teams' games are listed first and outlined. Scores come from ESPN's public scoreboards and refresh every 30 seconds while a game is live.";
+    }
+}
+
+export component YouTubePage inherits VerticalLayout {
+    spacing: 12px;
+    PageTitle { text: "YouTube"; }
+    SectionTitle { text: "Channels"; }
+    Group {
+        for c in FeedSettings.channels : Row {
+            label: c.title;
+            detail: c.detail;
+            OrderButton {
+                icon: @image-url("../icons/trash.svg");
+                clicked => { FeedSettings.remove-channel(c.id); }
+            }
+        }
+        Row {
+            label: FeedSettings.channels.length == 0 ? "Add a channel" : "Add another";
+            last: true;
+            TextField {
+                width: 220px;
+                placeholder-text: "@handle or channel link";
+                text <=> FeedSettings.channel-input;
+                accepted => { FeedSettings.add-channel(self.text); }
+            }
+            PushButton { text: "Add"; clicked => { FeedSettings.add-channel(FeedSettings.channel-input); } }
+        }
+    }
+    Footnote {
+        text: FeedSettings.channel-status != "" ? FeedSettings.channel-status
+            : "New uploads from these channels appear in Latest, newest first. Shorts are left out. No sign-in needed.";
+    }
+    Group {
+        Row {
+            label: "Play videos";
+            detail: FeedSettings.play-mode == 0 ? "Right in the widget, using Microsoft Edge so your YouTube sign-in carries over."
+                : FeedSettings.play-mode == 1 ? "In a small window in the corner of your screen, using Microsoft Edge."
+                : "In your default browser.";
+            last: true;
+            Segmented {
+                width: 240px;
+                items: ["In widget", "Pop-out", "Browser"];
+                index <=> FeedSettings.play-mode;
+                changed(i) => { FeedSettings.set-play-mode(i); }
+            }
+        }
+    }
+}
+
+export component RedditPage inherits VerticalLayout {
+    spacing: 12px;
+    PageTitle { text: "Reddit"; }
+    SectionTitle { text: "Your subreddits"; }
+    Group {
+        for sub in FeedSettings.subreddits : Row {
+            label: sub.title;
+            OrderButton {
+                icon: @image-url("../icons/trash.svg");
+                clicked => { FeedSettings.remove-subreddit(sub.id); }
+            }
+        }
+        Row {
+            label: FeedSettings.subreddits.length == 0 ? "Add a subreddit" : "Add another";
+            last: true;
+            TextField {
+                width: 220px;
+                placeholder-text: "r/name or link";
+                text <=> FeedSettings.subreddit-input;
+                accepted => { FeedSettings.add-subreddit(self.text); }
+            }
+            PushButton { text: "Add"; clicked => { FeedSettings.add-subreddit(FeedSettings.subreddit-input); } }
+        }
+    }
+    Footnote {
+        text: FeedSettings.subreddit-status != "" ? FeedSettings.subreddit-status
+            : "Posts from all of these appear together in the Yours tab. Popular shows r/popular. Click the subreddit name on the widget to show just one.";
+    }
+    if FeedSettings.reddit-presets.length > 0 : SectionTitle { text: "Suggestions"; }
+    if FeedSettings.reddit-presets.length > 0 : Group {
+        for preset[i] in FeedSettings.reddit-presets : Row {
+            label: preset.title;
+            detail: preset.detail;
+            last: i == FeedSettings.reddit-presets.length - 1;
+            PushButton { text: "Add"; clicked => { FeedSettings.add-subreddit(preset.id); } }
+        }
+    }
+    Group {
+        Row {
+            label: "Sort by";
+            last: true;
+            Segmented {
+                width: 300px;
+                items: ["Hot", "Top today", "New", "Rising"];
+                index <=> FeedSettings.reddit-sort;
+                changed(i) => { FeedSettings.set-reddit-sort(i); }
+            }
+        }
+    }
+    Footnote { text: "Reddit's public feeds don't need an account. They refresh every 15 minutes while the widget is on screen."; }
+}
+
+export component NetflixPage inherits VerticalLayout {
+    spacing: 12px;
+    PageTitle { text: "Netflix"; }
+    Group {
+        Row {
+            label: "Include non-English titles";
+            detail: "Rank shows and films from every language together, by views. Off: English-language titles only.";
+            Switch {
+                checked <=> FeedSettings.netflix-non-english;
+                toggled => { FeedSettings.set-netflix-non-english(self.checked); }
+            }
+        }
+        Row {
+            label: "Open titles in the widget";
+            detail: "Netflix opens right in the widget, using Microsoft Edge so your sign-in carries over. Off: open in your browser.";
+            last: true;
+            Switch {
+                checked <=> FeedSettings.netflix-in-widget;
+                toggled => { FeedSettings.set-netflix-in-widget(self.checked); }
+            }
+        }
+    }
+    Footnote {
+        text: "The global Top 10 comes from Netflix's own weekly charts, published every Tuesday for the week before. Titles are ranked by views (hours watched divided by runtime). Arrows compare with the previous week. Click a title to find it on Netflix.";
+    }
+}
+
+export component StocksPage inherits VerticalLayout {
+    spacing: 12px;
+    PageTitle { text: "Stocks"; }
+    SectionTitle { text: "Watchlist"; }
+    Group {
+        for h[i] in FeedSettings.watchlist : Row {
+            label: h.title;
+            detail: h.detail;
+            OrderButton {
+                icon: @image-url("../icons/chevron-up.svg");
+                enabled: i > 0;
+                clicked => { FeedSettings.move-stock(i, -1); }
+            }
+            OrderButton {
+                icon: @image-url("../icons/chevron-down.svg");
+                enabled: i < FeedSettings.watchlist.length - 1;
+                clicked => { FeedSettings.move-stock(i, 1); }
+            }
+            OrderButton {
+                icon: @image-url("../icons/trash.svg");
+                clicked => { FeedSettings.remove-stock(h.id); }
+            }
+        }
+        Row {
+            label: FeedSettings.watchlist.length == 0 ? "Add a stock" : "Add another";
+            last: true;
+            TextField {
+                width: 220px;
+                placeholder-text: "Company or ticker";
+                text <=> FeedSettings.stock-query;
+                accepted => { FeedSettings.search-stocks(self.text); }
+            }
+            PushButton { text: "Search"; clicked => { FeedSettings.search-stocks(FeedSettings.stock-query); } }
+        }
+    }
+    if FeedSettings.stock-results.length > 0 : Group {
+        for m[i] in FeedSettings.stock-results : Row {
+            label: m.title;
+            detail: m.detail;
+            last: i == FeedSettings.stock-results.length - 1;
+            OrderButton {
+                icon: @image-url("../icons/plus.svg");
+                clicked => { FeedSettings.add-stock(m.id); }
+            }
+        }
+    }
+    Footnote {
+        text: FeedSettings.stock-status != "" ? FeedSettings.stock-status
+            : "The same ticker can mean different companies on different exchanges. Search shows the exchange (e.g. SHOP on NYSE, SHOP.TO on Toronto).";
+    }
+    SectionTitle { text: "Markets"; }
+    Group {
+        for m[i] in FeedSettings.indices : Row {
+            label: m.title;
+            last: i == FeedSettings.indices.length - 1;
+            Switch { checked: m.on; toggled => { FeedSettings.toggle-index(m.id); } }
+        }
+    }
+    Footnote { text: "Quotes come from Yahoo Finance and refresh every minute while a market is open. Many exchanges outside the US are delayed by about 15 minutes. Not investment advice."; }
+}

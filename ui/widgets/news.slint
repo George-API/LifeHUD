@@ -18,7 +18,7 @@ component Tabs {
             }
             Rectangle {
                 y: parent.height - 1px;
-                height: 1.5px;
+                height: 2px;
                 border-radius: 1px;
                 background: i == HudState.news-tab ? Theme.accent : transparent;
                 animate background { duration: 150ms; }
@@ -34,8 +34,9 @@ component Tabs {
 component Headline {
     in property <NewsData> item;
     in property <bool> two-line;
+    in property <length> row-height: 22px;
 
-    height: root.two-line ? 60px : 22px;
+    height: root.two-line ? 60px : root.row-height;
 
     Rectangle {
         x: -6px;
@@ -49,7 +50,7 @@ component Headline {
         spacing: 10px;
         Text {
             text: root.item.title;
-            font-size: 12.5px;
+            font-size: 13px;
             color: Theme.text;
             vertical-alignment: center;
             overflow: elide;
@@ -93,12 +94,13 @@ component Headline {
 component Headlines inherits Flickable {
     in property <bool> two-line;
     in property <[NewsData]> items;
+    in property <length> row-height: 22px;
     content-height: list.preferred-height;
     list := VerticalLayout {
         alignment: start;
         for n[i] in root.items : VerticalLayout {
             if i > 0 : Rectangle { height: 1px; background: Theme.divider; }
-            Headline { item: n; two-line: root.two-line; }
+            Headline { item: n; two-line: root.two-line; row-height: root.row-height; }
         }
     }
 }
@@ -106,13 +108,20 @@ component Headlines inherits Flickable {
 component Feed {
     in property <bool> two-line;
     property <[NewsData]> items: HudState.news-tab == 0 ? HudState.news-curated : HudState.news-top;
-    Headlines { width: root.width; height: root.height; items: root.items; two-line: root.two-line; }
+    // One-line rows: exactly three (and their two 1px dividers) fill the Top HUD strip.
+    Headlines {
+        width: root.width;
+        height: root.height;
+        items: root.items;
+        two-line: root.two-line;
+        row-height: max(15px, (root.height - 2px) / 3);
+    }
     if root.items.length == 0 : Text {
         x: 0;
         y: root.two-line ? 4px : (root.height - self.preferred-height) / 2;
         width: root.width;
         text: HudState.news-placeholder;
-        font-size: 12.5px;
+        font-size: 13px;
         color: Theme.text3;
         wrap: word-wrap;
     }

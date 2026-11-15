@@ -1,0 +1,201 @@
+// The contract between Rust (src/feeds) and the feed widgets. As with HudState, Rust writes data in
+// and the UI calls callbacks out.
+
+/// The Top HUD's two sides: the HUD's one widget list split around the clock (kinds index
+/// `settings::WIDGETS`). The Sidebar stacks the same list (HudState.sidebar-order).
+export global Slots {
+    in property <[int]> left: [0, 2];
+    in property <[int]> right: [3, 1];
+}
+
+/// A headline-style link, shared by Sports news and Reddit.
+export struct LinkData {
+    title: string,
+    meta: string,
+    /// A shorter meta for one-line rows; empty = use `meta`.
+    short: string,
+    url: string,
+    thumb: image,
+    has-thumb: bool,
+}
+
+// ------------------------------------------------------------------ Sports
+
+export struct TeamLine {
+    abbr: string,
+    name: string,
+    score: string,
+    record: string,
+    logo: image,
+    has-logo: bool,
+    /// ESPN's variant for dark backgrounds, used in dark mode when available.
+    logo-dark: image,
+    has-logo-dark: bool,
+    /// Bold for the winner of a final; the other side is dimmed.
+    winner: bool,
+    dim: bool,
+}
+
+export struct GameData {
+    id: string,
+    league: string,
+    /// "Q3 7:24", "Final", "7:00 PM"; `sub` is the quieter second line ("3rd", "Tomorrow").
+    status: string,
+    sub: string,
+    live: bool,
+    done: bool,
+    favorite: bool,
+    /// Non-empty on the first game of a section ("Your teams", "Live", "Upcoming", "Final").
+    header: string,
+    first: TeamLine,
+    second: TeamLine,
+    url: string,
+}
+
+export global SportsState {
+    /// 0 = Scores, 1 = News.
+    in-out property <int> tab;
+    in property <[GameData]> games;
+    in property <[LinkData]> stories;
+    /// Followed leagues ("NBA · NHL"), or "2 live".
+    in property <string> label;
+    in property <int> live-count;
+    in property <string> placeholder: "Loading scores…";
+    in property <string> news-placeholder: "Loading headlines…";
+    callback open(string);
+    callback customize();
+}
+
+// ------------------------------------------------------------------ YouTube
+
+export struct VideoData {
+    id: string,
+    title: string,
+    channel: string,
+    /// "3h · 1.2M views"
+    meta: string,
+    duration: string,
+    thumb: image,
+    has-thumb: bool,
+    saved: bool,
+}
+
+export global YouTubeState {
+    /// 0 = Latest, 1 = Watch Later.
+    in-out property <int> tab;
+    in property <[VideoData]> latest;
+    in property <[VideoData]> saved;
+    in property <string> label;
+    in property <string> placeholder: "Loading videos…";
+    in property <bool> has-channels;
+    /// The paste box on the Watch Later tab.
+    in-out property <string> link;
+    in property <string> link-status;
+    callback play(string);
+    callback toggle-save(string);
+    callback add-link(string);
+    callback customize();
+}
+
+// ------------------------------------------------------------------ Reddit
+
+export global RedditState {
+    /// 0 = your subreddits, 1 = r/popular (the default).
+    in-out property <int> tab: 1;
+    in property <[LinkData]> yours;
+    in property <[LinkData]> popular;
+    /// "r/technology +1" and "Hot": the header shows both on Yours, the sort on Popular.
+    in property <string> label;
+    in property <string> sort;
+    in property <string> placeholder: "Loading posts…";
+    in property <string> popular-placeholder: "Loading posts…";
+    in property <bool> has-subreddits: true;
+    callback open(string);
+    callback customize();
+    /// Pick which subreddit "Yours" shows (a menu at the cursor).
+    callback choose();
+}
+
+// ------------------------------------------------------------------ Netflix
+
+export struct TitleData {
+    rank: int,
+    title: string,
+    /// "Season 3 · 3 weeks"
+    detail: string,
+    views: string,
+    /// "▲ 2", "▼ 1", "NEW", "BACK" or empty; `trend` colours it: 1 up, -1 down, 2 new, 0 neutral.
+    movement: string,
+    trend: int,
+    url: string,
+}
+
+export global NetflixState {
+    /// 0 = Shows, 1 = Films.
+    in-out property <int> tab;
+    in property <[TitleData]> shows;
+    in property <[TitleData]> films;
+    /// "Nov 2 – 8"
+    in property <string> week;
+    in property <string> placeholder: "Loading this week's Top 10…";
+    callback open(string);
+}
+
+// ------------------------------------------------------------------ Stocks
+
+export struct QuoteData {
+    symbol: string,
+    name: string,
+    price: string,
+    /// "+1.39" and "+0.39%"
+    change: string,
+    percent: string,
+    up: bool,
+    /// Sparkline path commands (line and filled area) for the Top HUD tile (100×30, i.e. 60×18px)
+    /// and the Sidebar row (100×46, i.e. 56×26px), and the previous close as a 0..1 height fraction.
+    line: string,
+    area: string,
+    row-line: string,
+    row-area: string,
+    baseline: float,
+    has-chart: bool,
+    /// No data for this symbol (delisted, mistyped).
+    missing: bool,
+    url: string,
+}
+
+export global StocksState {
+    /// 0 = Watchlist, 1 = Markets.
+    in-out property <int> tab;
+    in property <[QuoteData]> watchlist;
+    in property <[QuoteData]> markets;
+    /// "Market open" or "At close · Fri 4:00 PM"
+    in property <string> status;
+    in property <bool> open;
+    in property <string> placeholder: "Loading quotes…";
+    in property <string> markets-placeholder: "Loading quotes…";
+    /// Whether anything is chosen; the empty state only offers "Add stocks" when not.
+    in property <bool> has-watchlist: true;
+    in property <bool> has-markets: true;
+    callback open-quote(string);
+    callback customize();
+}
+
+/// A video docked into the YouTube or Netflix widget: an Edge window Life HUD keeps exactly over
+/// the widget's player area (src/feeds/player.rs). The widget reports where that area is.
+export global PlayerState {
+    /// A docked player is open, for this site ("youtube" or "netflix").
+    in property <bool> active;
+    in property <string> site;
+    in property <string> title;
+    /// Waiting for the window to appear and the video to start.
+    in property <bool> loading;
+    /// Where the player area is, in the HUD window (logical pixels), and whether one is on screen.
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <length> width;
+    in-out property <length> height;
+    callback close();
+    /// Continue in the browser instead.
+    callback pop-out();
+}

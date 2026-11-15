@@ -27,6 +27,8 @@ pub struct Palette {
     pub accent_play_button: bool,
     /// Decorative sticker art for mood themes (0 = none). See ui/stickers.slint.
     pub stickers: i32,
+    /// Stronger secondary text and edges (Graphite).
+    pub high_contrast: bool,
 }
 
 #[allow(clippy::too_many_arguments)] // a compact, table-like palette constructor
@@ -56,10 +58,16 @@ const fn p(
         on_accent,
         accent_play_button,
         stickers: 0,
+        high_contrast: false,
     }
 }
 
 impl Palette {
+    const fn high_contrast(mut self) -> Self {
+        self.high_contrast = true;
+        self
+    }
+
     const fn with_stickers(mut self, set: i32) -> Self {
         self.stickers = set;
         self
@@ -73,19 +81,21 @@ pub const CLASSIC_DARK: Palette =
 
 pub const PALETTES: &[Palette] = &[
     CLASSIC_DARK,
+    // True black for OLED screens, with stronger text and edges for readability.
     p(
         "graphite",
         "Graphite",
         true,
-        0xC41C1C1F,
-        &[0x1CFFFFFF, 0x00FFFFFF],
+        0xF0000000,
+        &[0x10FFFFFF, 0x00FFFFFF],
         0x14FFFFFF,
-        0x1CFFFFFF,
-        0xFFF5F5F7,
-        Some(0xFFD6D6DB),
-        0xFF1C1C1F,
+        0x33FFFFFF,
+        0xFFFFFFFF,
+        Some(0xFFE6E6EB),
+        0xFF000000,
         false,
-    ),
+    )
+    .high_contrast(),
     p(
         "midnight",
         "Midnight",
@@ -108,20 +118,21 @@ pub const PALETTES: &[Palette] = &[
         0xA8FFFDF8,
         0x16583F1A,
         0xF02B2118,
-        Some(0xFFAD8648),
+        Some(0xFF846738),
         0xFFFFFFFF,
         false,
     ),
+    // Cool silver: the light set's counterpart to Starlight's warmth.
     p(
         "titanium",
         "Titanium",
         false,
-        0xC8D3D1CC,
-        &[0x38FFFFFF, 0x20928A7E],
-        0x80F7F6F3,
+        0xC8D6DBE2,
+        &[0x38FFFFFF, 0x2096A8C0],
+        0x80F7F9FC,
         0x14000000,
-        0xEB1F1E1C,
-        Some(0xFF857A6C),
+        0xEB1A1F26,
+        Some(0xFF4A6787),
         0xFFFFFFFF,
         false,
     ),
@@ -134,7 +145,7 @@ pub const PALETTES: &[Palette] = &[
         0xA8FFF8F6,
         0x14602A1E,
         0xEB3A2622,
-        Some(0xFFC27A68),
+        Some(0xFF925C4E),
         0xFFFFFFFF,
         false,
     ),
@@ -161,7 +172,7 @@ pub const PALETTES: &[Palette] = &[
         0xB8FFFFFF,
         0x14000000,
         0xEB1E1B2E,
-        Some(0xFFFF5A5F),
+        Some(0xFFC04448),
         0xFFFFFFFF,
         true,
     )
@@ -208,17 +219,18 @@ pub const PALETTES: &[Palette] = &[
         true,
     )
     .with_stickers(5),
+    // Sea glass, sand and sky: the light mood.
     p(
-        "nebula",
-        "Nebula",
-        true,
-        0xCC0B0A1F,
-        &[0x446A3DE8, 0x24E8508A, 0x000B0A1F],
-        0x14C9B8FF,
-        0x26C9B8FF,
-        0xFFEEEAFF,
-        Some(0xFFB79CFF),
-        0xFF140B2E,
+        "coast",
+        "Coast",
+        false,
+        0xBCEEF6F4,
+        &[0x3C8FDCCB, 0x24FFE0B5, 0x2C7FC1EA],
+        0xB0FFFFFF,
+        0x14003840,
+        0xEB0F2A2E,
+        Some(0xFF1C7C74),
+        0xFFFFFFFF,
         true,
     )
     .with_stickers(6),
@@ -273,6 +285,7 @@ pub fn accent(p: &Palette) -> Color {
 
 /// Writes every design token for `p` into a window's Theme global.
 pub fn apply(theme: &Theme, p: &Palette) {
+    theme.on_sticker_tile(crate::stickers::tile);
     let d = p.dark;
     let text = argb(p.text);
     let ink = |a: u8| with_alpha(text, a);
@@ -285,16 +298,41 @@ pub fn apply(theme: &Theme, p: &Palette) {
     theme.set_ambient_a(a);
     theme.set_ambient_b(b);
     theme.set_ambient_c(c);
-    theme.set_edge(ink(if d { 0x1A } else { 0x14 }));
+    let hc = p.high_contrast;
+    theme.set_edge(ink(if hc {
+        0x33
+    } else if d {
+        0x1A
+    } else {
+        0x14
+    }));
     theme.set_card(argb(p.card));
     theme.set_card_border(argb(p.card_border));
     theme.set_text(text);
-    theme.set_text2(ink(if d { 0xB8 } else { 0xA0 }));
-    theme.set_text3(ink(if d { 0x78 } else { 0x6E }));
+    theme.set_text2(ink(if hc {
+        0xE0
+    } else if d {
+        0xB8
+    } else {
+        0xB4
+    }));
+    theme.set_text3(ink(if hc {
+        0xA8
+    } else if d {
+        0x78
+    } else {
+        0x86
+    }));
     theme.set_fill(ink(if d { 0x14 } else { 0x0C }));
     theme.set_fill_hover(ink(if d { 0x22 } else { 0x16 }));
     theme.set_input(ink(if d { 0x10 } else { 0x0A }));
-    theme.set_divider(ink(if d { 0x18 } else { 0x12 }));
+    theme.set_divider(ink(if hc {
+        0x2E
+    } else if d {
+        0x18
+    } else {
+        0x12
+    }));
     theme.set_track(ink(if d { 0x2E } else { 0x1C }));
     theme.set_accent(accent);
     theme.set_on_accent(if p.accent.is_some() {

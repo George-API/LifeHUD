@@ -1,0 +1,246 @@
+// YouTube: new videos from your channels and a Watch Later list. Clicking a video plays it in a small
+// pop-out player (or the browser); hovering offers to save it for later.
+
+import { Theme } from "../theme.slint";
+import { Card, GhostLineEdit } from "../components.slint";
+import { VideoData, YouTubeState } from "../feeds/state.slint";
+import { FeedScroll, ClampText, HScroll, PanelHeader, Placeholder, StripHeader, Thumb } from "../feeds/common.slint";
+import { HudState } from "../state.slint";
+import { NowWatching } from "watching.slint";
+import { PlayerBar, PlayerSlot } from "../feeds/common.slint";
+import { PlayerState } from "../feeds/state.slint";
+
+/// A 16:9 thumbnail with the duration badge, and a save toggle on hover.
+component VideoThumb inherits Rectangle {
+    in property <VideoData> video;
+    in property <bool> hovered;
+    /// Badges only where they leave the picture visible.
+    property <bool> roomy: root.height >= 40px;
+    border-radius: 7px;
+    clip: true;
+    Thumb { width: parent.width; height: parent.height; border-radius: 7px; source: root.video.thumb; loaded: root.video.has-thumb; fallback: @image-url("../icons/youtube.svg"); }
+    if root.roomy && root.video.duration != "" : Rectangle {
+        x: parent.width - self.width - 4px;
+        y: parent.height - self.height - 4px;
+        width: d.preferred-width + 8px;
+        height: 15px;
+        border-radius: 4px;
+        background: #000000c0;
+        d := Text { text: root.video.duration; font-size: 10px; font-weight: 600; color: white; }
+    }
+    if root.roomy && (root.hovered || root.video.saved) : Rectangle {
+        x: parent.width - self.width - 4px;
+        y: 4px;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: save.has-hover ? #000000e0 : #000000a8;
+        Image {
+            source: root.video.saved ? @image-url("../icons/bookmark-fill.svg") : @image-url("../icons/bookmark.svg");
+            width: 12px;
+            colorize: white;
+        }
+        save := TouchArea {
+            accessible-role: button;
+            accessible-label: root.video.saved ? "Remove from Watch Later" : "Save to Watch Later";
+            accessible-action-default => { YouTubeState.toggle-save(root.video.id); }
+            mouse-cursor: pointer;
+            clicked => { YouTubeState.toggle-save(root.video.id); }
+        }
+    }
+}
+
+/// Top HUD tile: thumbnail at full strip height, then two lines of title and the channel.
+component VideoTile {
+    in property <VideoData> video;
+    accessible-role: button;
+    accessible-label: root.video.title + ", " + root.video.channel + (root.video.duration != "" ? ", " + root.video.duration : "") + (root.video.saved ? ", in Watch Later" : "");
+    accessible-action-default => { YouTubeState.play(root.video.id); }
+    // Under ~26px a thumbnail is an unreadable smudge; the tile becomes text-only.
+    property <length> thumb-width: root.height >= 26px ? root.height * 16 / 9 : 0px;
+    width: self.thumb-width + 168px;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { YouTubeState.play(root.video.id); }
+    }
+    Rectangle {
+        x: -4px;
+        y: -2px;
+        width: root.width + 8px;
+        height: root.height + 4px;
+        border-radius: 9px;
+        background: ta.has-hover ? Theme.fill : transparent;
+        animate background { duration: 120ms; }
+    }
+    HorizontalLayout {
+        spacing: 9px;
+        if root.height >= 26px : VideoThumb { width: root.thumb-width; video: root.video; hovered: ta.has-hover; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            if root.height >= 54px : ClampText { text: root.video.title; font-size: 12px; font-weight: 600; }
+            if root.height < 54px : Text { text: root.video.title; font-size: 12px; font-weight: 600; color: Theme.text; overflow: elide; }
+            if root.height >= 32px : Text { text: root.video.channel; font-size: 11px; color: Theme.text2; overflow: elide; }
+        }
+    }
+}
+
+/// Sidebar row: a larger thumbnail beside title, channel and age.
+component VideoRow {
+    in property <VideoData> video;
+    accessible-role: button;
+    accessible-label: root.video.title + ", " + root.video.channel + (root.video.duration != "" ? ", " + root.video.duration : "") + (root.video.saved ? ", in Watch Later" : "");
+    accessible-action-default => { YouTubeState.play(root.video.id); }
+    height: 80px;
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { YouTubeState.play(root.video.id); }
+    }
+    Rectangle {
+        x: -6px;
+        width: root.width + 12px;
+        border-radius: 8px;
+        background: ta.has-hover ? Theme.fill : transparent;
+        animate background { duration: 120ms; }
+    }
+    HorizontalLayout {
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 10px;
+        VideoThumb { width: 112px; video: root.video; hovered: ta.has-hover; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            ClampText { text: root.video.title; font-size: 13px; font-weight: 600; }
+            Text { text: root.video.channel; font-size: 11px; color: Theme.text2; overflow: elide; }
+            Text { text: root.video.meta; font-size: 11px; color: Theme.text3; overflow: elide; }
+        }
+    }
+}
+
+/// Paste a YouTube link to save it.
+component LinkBox {
+    in property <length> font-size: 12px;
+    in property <length> box-height: 26px;
+    height: root.box-height;
+    Rectangle { border-radius: 7px; background: Theme.input; }
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 9px;
+        spacing: 7px;
+        Image { source: @image-url("../icons/plus.svg"); width: 11px; colorize: Theme.text3; }
+        GhostLineEdit {
+            font-size: root.font-size;
+            text <=> YouTubeState.link;
+            placeholder: "Paste a YouTube link";
+            accepted(t) => { YouTubeState.add-link(t); }
+        }
+    }
+}
+
+export component YouTubeStrip inherits Card {
+    property <[VideoData]> items: YouTubeState.tab == 0 ? YouTubeState.latest : YouTubeState.saved;
+    /// A video docked here takes the row; Now Watching steps aside for it.
+    property <bool> docked: PlayerState.active && PlayerState.site == "youtube";
+    property <bool> watching: HudState.watching && HudState.watching-site == "youtube" && !root.docked;
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 5px;
+        // On a short bar a playing video needs the whole strip; the tabs come back when it stops.
+        if !((root.watching || root.docked) && root.height < 84px) : StripHeader {
+            labels: ["Latest", "Watch Later"];
+            index <=> YouTubeState.tab;
+            label: YouTubeState.tab == 0 ? YouTubeState.label : YouTubeState.link-status != "" ? YouTubeState.link-status : YouTubeState.saved.length + " saved";
+        }
+        if root.watching : VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            NowWatching { site: "youtube"; compact: true; }
+        }
+        if root.docked : HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 10px;
+            PlayerSlot { width: self.height * 16 / 9; }
+            VerticalLayout {
+                alignment: center;
+                PlayerBar { }
+            }
+        }
+        if !root.watching && !root.docked : HScroll {
+            vertical-stretch: 1;
+            property <length> lead: YouTubeState.tab == 1 ? 196px : 0px;
+            property <length> tile: (self.height * 16 / 9) + 168px + 12px;
+            content-width: self.lead + root.items.length * self.tile;
+            if YouTubeState.tab == 1 : VerticalLayout {
+                x: 0px;
+                width: 184px;
+                height: parent.height;
+                alignment: center;
+                LinkBox { box-height: min(26px, parent.height); }
+            }
+            for v[i] in root.items : VideoTile { x: parent.lead + i * parent.tile; height: parent.height; video: v; }
+            if root.items.length == 0 : Placeholder {
+                x: parent.lead;
+                width: parent.width - parent.lead;
+                height: parent.height;
+                centered: false;
+                text: YouTubeState.tab == 0 ? YouTubeState.placeholder : "Save videos to watch later, or paste a link.";
+                action: YouTubeState.tab == 0 && !YouTubeState.has-channels ? "Add channels" : "";
+                act => { YouTubeState.customize(); }
+            }
+        }
+    }
+}
+
+export component YouTubePanel inherits Card {
+    property <bool> docked: PlayerState.active && PlayerState.site == "youtube";
+    property <[VideoData]> items: YouTubeState.tab == 0 ? YouTubeState.latest : YouTubeState.saved;
+    VerticalLayout {
+        padding: 16px;
+        padding-bottom: 10px;
+        spacing: 6px;
+        PanelHeader {
+            title: "YouTube";
+            labels: ["Latest", "Later"];
+            index <=> YouTubeState.tab;
+            caption: YouTubeState.tab == 0 ? YouTubeState.label : YouTubeState.link-status != "" ? YouTubeState.link-status : YouTubeState.saved.length == 1 ? "1 video saved" : YouTubeState.saved.length + " videos saved";
+        }
+        if root.docked : VerticalLayout {
+            spacing: 4px;
+            PlayerSlot { height: self.width * 9 / 16; }
+            PlayerBar { }
+        }
+        if !root.docked : NowWatching { site: "youtube"; }
+        if YouTubeState.tab == 1 : LinkBox { font-size: 13px; }
+        if root.items.length > 0 : FeedScroll {
+            vertical-stretch: 1;
+            min-height: 100px;
+            preferred-height: 200px;
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                alignment: start;
+                for v[i] in root.items : VerticalLayout {
+                    if i > 0 : Rectangle { height: 1px; background: Theme.divider; }
+                    VideoRow { video: v; }
+                }
+            }
+        }
+        if root.items.length == 0 : VerticalLayout {
+            vertical-stretch: 1;
+            alignment: start;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            Placeholder {
+                centered: false;
+                text: YouTubeState.tab == 0 ? YouTubeState.placeholder : "Save videos to watch later: hover a video and tap the bookmark, or paste a link above.";
+                action: YouTubeState.tab == 0 && !YouTubeState.has-channels ? "Add channels" : "";
+                act => { YouTubeState.customize(); }
+            }
+        }
+    }
+}

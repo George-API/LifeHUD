@@ -25,23 +25,40 @@ pub fn is_enabled() -> bool {
 }
 
 pub fn set_enabled(enable: bool) {
+    if !enable {
+        remove();
+    } else if let Ok(exe) = std::env::current_exe() {
+        write(&exe);
+    }
+}
+
+/// After installing or moving, keeps "Open at login" (if it's on) pointing at `exe`.
+pub fn repoint(exe: &std::path::Path) {
+    if is_enabled() {
+        write(exe);
+    }
+}
+
+fn remove() {
     unsafe {
-        if enable {
-            let Ok(exe) = std::env::current_exe() else { return };
-            let command = crate::platform::to_wide(&format!("\"{}\"", exe.display()));
-            let status = RegSetKeyValueW(
-                HKEY_CURRENT_USER,
-                &HSTRING::from(RUN_KEY),
-                &HSTRING::from(VALUE),
-                REG_SZ.0,
-                Some(command.as_ptr() as *const _),
-                (command.len() * 2) as u32,
-            );
-            if status.is_err() {
-                crate::storage::log(format!("could not enable open at login: {status:?}"));
-            }
-        } else {
-            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN_KEY), &HSTRING::from(VALUE));
-        }
+        let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN_KEY), &HSTRING::from(VALUE));
+    }
+}
+
+fn write(exe: &std::path::Path) {
+    // Quoted, so a path with spaces can't be misread as a different program.
+    let command = crate::platform::to_wide(&format!("\"{}\"", exe.display()));
+    let status = unsafe {
+        RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            &HSTRING::from(RUN_KEY),
+            &HSTRING::from(VALUE),
+            REG_SZ.0,
+            Some(command.as_ptr() as *const _),
+            (command.len() * 2) as u32,
+        )
+    };
+    if status.is_err() {
+        crate::storage::log(format!("could not enable open at login: {status:?}"));
     }
 }

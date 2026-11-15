@@ -2,7 +2,8 @@
 
 use windows::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Threading::{
-    CreateEventW, CreateMutexW, EVENT_MODIFY_STATE, INFINITE, OpenEventW, SetEvent, WaitForMultipleObjects,
+    CreateEventW, CreateMutexW, EVENT_MODIFY_STATE, INFINITE, OpenEventW, OpenMutexW, SYNCHRONIZATION_SYNCHRONIZE,
+    SetEvent, WaitForMultipleObjects,
 };
 use windows::core::HSTRING;
 
@@ -39,6 +40,37 @@ pub fn acquire(exit_requested: bool) -> Option<Instance> {
         }
         Some(Instance { _mutex: mutex })
     }
+}
+
+/// Asks a running copy to quit (it releases its reserved screen space) and waits until it has, up to
+/// `timeout`. Returns true if no copy is running any more.
+pub fn request_exit_and_wait(timeout: std::time::Duration) -> bool {
+    let running = || unsafe {
+        match OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, false, &HSTRING::from(MUTEX)) {
+            Ok(h) => {
+                let _ = CloseHandle(h);
+                true
+            }
+            Err(_) => false,
+        }
+    };
+    if !running() {
+        return true;
+    }
+    unsafe {
+        if let Ok(ev) = OpenEventW(EVENT_MODIFY_STATE, false, &HSTRING::from(EXIT)) {
+            let _ = SetEvent(ev);
+            let _ = CloseHandle(ev);
+        }
+    }
+    let deadline = std::time::Instant::now() + timeout;
+    while running() {
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    true
 }
 
 /// Listens for signals from later launches and forwards them to the UI thread.

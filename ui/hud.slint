@@ -2,10 +2,24 @@ import { Theme } from "theme.slint";
 import { HudState } from "state.slint";
 import { ClockStrip, ClockHeader } from "widgets/clock.slint";
 import { WeatherStrip, WeatherPanel } from "widgets/weather.slint";
-import { TodayStrip, TodayPanel } from "widgets/today.slint";
-import { NewsStrip, NewsPanel } from "widgets/news.slint";
+import { TodayPanel } from "widgets/today.slint";
+import { NewsPanel } from "widgets/news.slint";
 import { MediaStrip, MediaPanel } from "widgets/media.slint";
 import { Chrome } from "widgets/chrome.slint";
+import { Slots } from "feeds/state.slint";
+import { SlotStrip, FeedPanel } from "feeds/slots.slint";
+import { DragState } from "drag.slint";
+import { EditState, EditOutline, InsertLine, EditGhost, ExtrasTray } from "edit.slint";
+
+/// One widget in the Top HUD. Weather and Music keep their natural width; the rest share the space.
+component TopCell inherits HorizontalLayout {
+    in property <int> kind;
+    in property <bool> compact;
+    horizontal-stretch: root.kind >= 2 ? 1 : 0;
+    if root.kind == 0 : WeatherStrip { compact: root.compact; horizontal-stretch: 0; }
+    if root.kind == 1 : MediaStrip { horizontal-stretch: 0; }
+    if root.kind >= 2 : SlotStrip { kind: root.kind; horizontal-stretch: 1; }
+}
 
 /// The docked HUD surface. Its size and position are owned by the shell AppBar (see src/platform),
 /// so nothing here constrains the window: children are placed explicitly.
@@ -18,7 +32,73 @@ export component HudWindow inherits Window {
     preferred-height: 100px;
 
     property <length> pad: 10px;
-    property <length> gap: 10px;
+    property <length> gap: 14px;
+    /// Space between Sidebar cards.
+    property <length> side-gap: 16px;
+
+    // ---------------------------------------------------------------- Edit Widgets
+    // One drag for both layouts, in `content` coordinates. Each card works out whether the pointer
+    // is over it (and past its middle) and claims the drop; dropping onto the tray removes a card.
+    drag := DragState { }
+    property <int> drop-owner: -1;
+    property <bool> drop-after;
+    property <bool> over-tray;
+    /// The insertion index a drop would use (-1: none).
+    property <int> drop-at: root.drop-owner < 0 ? -1 : root.drop-owner + (root.drop-after ? 1 : 0);
+    /// Dropping now would move or add something (so the insertion line is worth showing).
+    property <bool> drop-moves: root.drop-at >= 0 && !root.over-tray
+        && (drag.kind == 2 ? !EditState.full : !(root.drop-at == drag.from || root.drop-at == drag.from + 1));
+    /// Where the last drop landed, for a brief highlight (-1: none).
+    property <int> landed: -1;
+    Timer {
+        interval: 700ms;
+        running: root.landed >= 0;
+        triggered => { root.landed = -1; }
+    }
+    property <bool> editing: EditState.editing;
+    property <bool> vertical: HudState.vertical;
+    changed editing => { root.forget(); }
+    changed vertical => { root.forget(); }
+
+    function forget() {
+        drag.reset();
+        root.drop-owner = -1;
+        root.over-tray = false;
+    }
+    function claim(i: int, after: bool) {
+        root.drop-owner = i;
+        root.drop-after = after;
+    }
+    function unclaim(i: int) {
+        if root.drop-owner == i { root.drop-owner = -1; }
+    }
+    function lift(i: int, kind: int, x: length, y: length) {
+        drag.press(1, i, EditState.ids[kind], EditState.names[kind], x, y);
+    }
+    function finish() {
+        if drag.dragging {
+            if drag.kind == 1 {
+                if root.over-tray {
+                    if EditState.count > 1 { EditState.remove(drag.from); }
+                } else if root.drop-moves {
+                    EditState.place(drag.from, root.drop-at);
+                    root.landed = root.drop-at > drag.from ? root.drop-at - 1 : root.drop-at;
+                }
+            } else if drag.kind == 2 && !root.over-tray {
+                if EditState.full {
+                    if root.drop-owner >= 0 {
+                        EditState.replace(root.drop-owner, drag.wid);
+                        root.landed = root.drop-owner;
+                    }
+                } else {
+                    root.landed = root.drop-at >= 0 ? root.drop-at : EditState.count;
+                    EditState.insert(drag.wid, root.landed);
+                }
+            }
+        }
+        drag.reset();
+        root.drop-owner = -1;
+    }
 
     Rectangle { background: Theme.hud-tint; }
 
@@ -28,12 +108,47 @@ export component HudWindow inherits Window {
         x: HudState.transitioning && HudState.vertical ? -12px : 0px;
         y: HudState.transitioning && !HudState.vertical ? -8px : 0px;
         opacity: HudState.transitioning ? 0 : 1;
-        animate opacity { duration: 200ms; easing: ease-in-out; }
+        // Fully faded widgets drop out of the frame entirely. Otherwise the renderer would still lay
+        // them out at every intermediate size while the glass folds (measured: 17–25 ms frames).
+        visible: self.opacity > 0;
+        // Out quickly so the fold can start; back in gently once the glass has landed.
+        animate opacity {
+            duration: HudState.transitioning ? 80ms : 260ms;
+            easing: HudState.transitioning ? ease-in : cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
         animate x, y { duration: 320ms; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        // Beneath every widget, so only presses on the clock and empty space reach it: hold to start
+        // editing (like the iPhone's home screen); while editing, a click there means Done.
+        hold := TouchArea {
+            property <bool> holding;
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left && !EditState.editing {
+                    self.holding = true;
+                } else if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                    self.holding = false;
+                }
+            }
+            moved => {
+                if abs(self.mouse-x - self.pressed-x) > 6px || abs(self.mouse-y - self.pressed-y) > 6px {
+                    self.holding = false;
+                }
+            }
+            clicked => { if EditState.editing && !drag.dragging { EditState.done(); } }
+        }
+        Timer {
+            interval: 550ms;
+            running: hold.holding;
+            triggered => {
+                hold.holding = false;
+                EditState.begin();
+            }
+        }
 
     // ---------------------------------------------------------------- Top HUD
     if !HudState.vertical : top := Rectangle {
-        property <length> clock-width: 250px;
+        // While editing, the clock makes room for the tray of widgets that aren't on the HUD.
+        property <length> clock-width: EditState.editing ? min(600px, root.width * 0.42) : 250px;
         property <length> side-width: (root.width - self.clock-width) / 2 - root.pad;
         property <length> inner-height: root.height - 2 * root.pad;
         property <bool> compact: root.width < 1560px;
@@ -44,32 +159,142 @@ export component HudWindow inherits Window {
             background: Theme.edge;
         }
 
-        HorizontalLayout {
+        left-row := HorizontalLayout {
             x: root.pad;
             y: root.pad;
             width: top.side-width;
             height: top.inner-height;
             spacing: root.gap;
-            WeatherStrip { compact: top.compact; horizontal-stretch: 0; }
-            TodayStrip { horizontal-stretch: 1; }
+            for kind[j] in Slots.left : Rectangle {
+                property <int> index: j;
+                property <length> ax: left-row.x + self.x;
+                property <length> ay: left-row.y + self.y;
+                property <bool> hot: drag.dragging && drag.px >= self.ax - root.gap / 2 && drag.px < self.ax + self.width + root.gap / 2
+                    && drag.py >= self.ay - root.pad && drag.py < self.ay + self.height + root.pad;
+                property <bool> after: drag.px >= self.ax + self.width / 2;
+                changed hot => { if self.hot { root.claim(self.index, self.after); } else { root.unclaim(self.index); } }
+                changed after => { if self.hot { root.claim(self.index, self.after); } }
+                horizontal-stretch: kind >= 2 ? 1 : 0;
+
+                TopCell { kind: kind; compact: top.compact; }
+                if EditState.editing : EditOutline {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    name: EditState.names[kind];
+                    removable: EditState.count > 1;
+                    busy: drag.dragging;
+                    lifted: drag.dragging && drag.kind == 1 && drag.from == parent.index;
+                    landed: root.landed == parent.index;
+                    replace-target: drag.dragging && drag.kind == 2 && EditState.full && root.drop-owner == parent.index;
+                    ox: parent.ax;
+                    oy: parent.ay;
+                    pressed(x, y) => { root.lift(parent.index, kind, x, y); }
+                    moved(x, y) => { drag.move(x, y); }
+                    released => { root.finish(); }
+                    cancelled => { root.forget(); }
+                    remove => { EditState.remove(parent.index); }
+                    nudge(d) => { EditState.nudge(parent.index, d); }
+                }
+                if EditState.editing && drag.dragging && root.drop-owner == self.index && root.drop-moves : InsertLine {
+                    x: root.drop-after ? parent.width + root.gap / 2 - 1.5px : -root.gap / 2 - 1.5px;
+                    y: 4px;
+                    width: 3px;
+                    height: parent.height - 8px;
+                    vertical: true;
+                }
+            }
+            // Takes the slack only when nothing on this side stretches (e.g. Weather alone).
+            Rectangle { horizontal-stretch: 0.001; }
         }
 
         // Exactly centred on the screen, independent of the two halves.
-        ClockStrip {
+        if !EditState.editing : ClockStrip {
             x: (root.width - top.clock-width) / 2;
             y: root.pad;
             width: top.clock-width;
             height: top.inner-height;
         }
+        if EditState.editing : ExtrasTray {
+            x: (root.width - top.clock-width) / 2;
+            y: root.pad;
+            width: top.clock-width;
+            height: top.inner-height;
+            compact: true;
+            chips: EditState.extras;
+            full: EditState.full;
+            count: EditState.count;
+            capacity: EditState.capacity;
+            can-undo: EditState.can-undo;
+            card-drag: drag.dragging && drag.kind == 1;
+            can-remove: EditState.count > 1;
+            dragging-id: drag.wid;
+            busy: drag.dragging;
+            ox: self.x;
+            oy: self.y;
+            px: drag.px;
+            py: drag.py;
+            changed pointer-inside => { root.over-tray = self.pointer-inside; }
+            chip-pressed(id, name, x, y) => { drag.press(2, -1, id, name, x, y); }
+            chip-moved(x, y) => { drag.move(x, y); }
+            chip-released(id, by-pointer) => {
+                // A plain click (or a screen reader's default action) adds it at the end, when there's room.
+                if drag.dragging { root.finish(); } else if !EditState.full { EditState.insert(id, EditState.count); }
+                root.forget();
+            }
+            chip-cancelled => { root.forget(); }
+            undo => { EditState.undo(); }
+            done => { EditState.done(); }
+        }
 
-        HorizontalLayout {
+        right-row := HorizontalLayout {
             x: (root.width + top.clock-width) / 2;
             y: root.pad;
             width: top.side-width;
             height: top.inner-height;
             spacing: root.gap;
-            NewsStrip { horizontal-stretch: 1; }
-            MediaStrip { horizontal-stretch: 0; }
+            Rectangle { horizontal-stretch: 0.001; }
+            for kind[j] in Slots.right : Rectangle {
+                property <int> index: Slots.left.length + j;
+                property <length> ax: right-row.x + self.x;
+                property <length> ay: right-row.y + self.y;
+                property <bool> hot: drag.dragging && drag.px >= self.ax - root.gap / 2 && drag.px < self.ax + self.width + root.gap / 2
+                    && drag.py >= self.ay - root.pad && drag.py < self.ay + self.height + root.pad;
+                property <bool> after: drag.px >= self.ax + self.width / 2;
+                changed hot => { if self.hot { root.claim(self.index, self.after); } else { root.unclaim(self.index); } }
+                changed after => { if self.hot { root.claim(self.index, self.after); } }
+                horizontal-stretch: kind >= 2 ? 1 : 0;
+
+                TopCell { kind: kind; compact: top.compact; }
+                if EditState.editing : EditOutline {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    name: EditState.names[kind];
+                    removable: EditState.count > 1;
+                    busy: drag.dragging;
+                    lifted: drag.dragging && drag.kind == 1 && drag.from == parent.index;
+                    landed: root.landed == parent.index;
+                    replace-target: drag.dragging && drag.kind == 2 && EditState.full && root.drop-owner == parent.index;
+                    ox: parent.ax;
+                    oy: parent.ay;
+                    pressed(x, y) => { root.lift(parent.index, kind, x, y); }
+                    moved(x, y) => { drag.move(x, y); }
+                    released => { root.finish(); }
+                    cancelled => { root.forget(); }
+                    remove => { EditState.remove(parent.index); }
+                    nudge(d) => { EditState.nudge(parent.index, d); }
+                }
+                if EditState.editing && drag.dragging && root.drop-owner == self.index && root.drop-moves : InsertLine {
+                    x: root.drop-after ? parent.width + root.gap / 2 - 1.5px : -root.gap / 2 - 1.5px;
+                    y: 4px;
+                    width: 3px;
+                    height: parent.height - 8px;
+                    vertical: true;
+                }
+            }
             Chrome { vertical: false; width: 34px; horizontal-stretch: 0; }
         }
     }
@@ -89,20 +314,109 @@ export component HudWindow inherits Window {
             height: root.height;
             padding: root.pad + 2px;
             padding-top: 16px;
-            spacing: 14px;
+            spacing: root.side-gap;
 
             ClockHeader { }
             // Cards in the user's chosen order. Today and News share whatever height is left;
             // taller screens also get the hourly forecast.
-            for kind in HudState.sidebar-order : VerticalLayout {
-                vertical-stretch: kind == 2 ? 5 : kind == 3 ? 4 : 0;
-                if kind == 0 : WeatherPanel { show-hourly: root.height >= 1240px; }
-                if kind == 1 : MediaPanel { }
-                if kind == 2 : TodayPanel { vertical-stretch: 1; }
-                if kind == 3 : NewsPanel { vertical-stretch: 1; }
+            for kind[i] in HudState.sidebar-order : Rectangle {
+                property <bool> hot: drag.dragging && drag.px >= self.x - 20px && drag.px < self.x + self.width + 20px
+                    && drag.py >= self.y - root.side-gap / 2 && drag.py < self.y + self.height + root.side-gap / 2;
+                property <bool> after: drag.py >= self.y + self.height / 2;
+                changed hot => { if self.hot { root.claim(i, self.after); } else { root.unclaim(i); } }
+                changed after => { if self.hot { root.claim(i, self.after); } }
+                vertical-stretch: kind == 2 ? 5 : kind >= 3 ? 4 : 0;
+
+                VerticalLayout {
+                    if kind == 0 : WeatherPanel { show-hourly: root.height >= 1240px; }
+                    if kind == 1 : MediaPanel { }
+                    if kind == 2 : TodayPanel { vertical-stretch: 1; }
+                    if kind == 3 : NewsPanel { vertical-stretch: 1; }
+                    if kind >= 4 : FeedPanel { kind: kind; narrow: root.width < 300px; vertical-stretch: 1; }
+                }
+                if EditState.editing : EditOutline {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    name: EditState.names[kind];
+                    removable: EditState.count > 1;
+                    busy: drag.dragging;
+                    lifted: drag.dragging && drag.kind == 1 && drag.from == i;
+                    landed: root.landed == i;
+                    replace-target: drag.dragging && drag.kind == 2 && EditState.full && root.drop-owner == i;
+                    ox: parent.x;
+                    oy: parent.y;
+                    pressed(x, y) => { root.lift(i, kind, x, y); }
+                    moved(x, y) => { drag.move(x, y); }
+                    released => { root.finish(); }
+                    cancelled => { root.forget(); }
+                    remove => { EditState.remove(i); }
+                    nudge(d) => { EditState.nudge(i, d); }
+                }
+                // The line sits in the middle of the gap above or below this card.
+                if EditState.editing && drag.dragging && root.drop-owner == i && root.drop-moves : InsertLine {
+                    x: 4px;
+                    y: root.drop-after ? parent.height + root.side-gap / 2 - 1.5px : -root.side-gap / 2 - 1.5px;
+                    width: parent.width - 8px;
+                    height: 3px;
+                }
+            }
+            if EditState.editing : ExtrasTray {
+                chips: EditState.extras;
+                full: EditState.full;
+                count: EditState.count;
+                capacity: EditState.capacity;
+                can-undo: EditState.can-undo;
+                card-drag: drag.dragging && drag.kind == 1;
+                can-remove: EditState.count > 1;
+                dragging-id: drag.wid;
+                busy: drag.dragging;
+                ox: self.x;
+                oy: self.y;
+                px: drag.px;
+                py: drag.py;
+                changed pointer-inside => { root.over-tray = self.pointer-inside; }
+                chip-pressed(id, name, x, y) => { drag.press(2, -1, id, name, x, y); }
+                chip-moved(x, y) => { drag.move(x, y); }
+                chip-released(id, by-pointer) => {
+                    if drag.dragging { root.finish(); } else if !EditState.full { EditState.insert(id, EditState.count); }
+                    root.forget();
+                }
+                chip-cancelled => { root.forget(); }
+                undo => { EditState.undo(); }
+                done => { EditState.done(); }
             }
             Chrome { vertical: true; height: 30px; }
         }
     }
+
+        // Whatever is being dragged follows the pointer, kept inside the HUD.
+        if drag.dragging : EditGhost {
+            x: clamp(drag.px - 30px, 0, root.width - self.width);
+            y: clamp(drag.py - 22px, 0, root.height - self.height);
+            wid: drag.wid;
+            name: drag.name;
+        }
+    }
+
+    // Esc finishes editing (when the HUD has keyboard focus).
+    if EditState.editing : FocusScope {
+        x: 0;
+        y: 0;
+        width: 0;
+        height: 0;
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                EditState.done();
+                return accept;
+            }
+            if e.modifiers.control && (e.text == "z" || e.text == "Z") {
+                EditState.undo();
+                return accept;
+            }
+            return reject;
+        }
     }
 }

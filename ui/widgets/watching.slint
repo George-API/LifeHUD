@@ -1,0 +1,119 @@
+// "Now watching": the YouTube or Netflix video playing in a browser tab, shown inside that site's
+// widget. Data comes from Windows media controls (see src/services/media.rs); nothing is fetched.
+//
+// Drop `NowWatching { site: "youtube"; }` (or "netflix") into a widget. It takes no space unless that
+// site is playing. `compact: true` gives a single row for the Top HUD strip.
+
+import { Theme } from "../theme.slint";
+import { IconButton, Overline, SlimProgress } from "../components.slint";
+import { HudState } from "../state.slint";
+
+component Thumb inherits Rectangle {
+    border-radius: 6px;
+    clip: true;
+    background: Theme.fill;
+    if HudState.watching-has-art : Image {
+        width: parent.width;
+        height: parent.height;
+        source: HudState.watching-art;
+        image-fit: cover;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { HudState.watching-open(); }
+    }
+}
+
+export component NowWatching {
+    /// "youtube" or "netflix": the card shows only while that site is playing.
+    in property <string> site: "youtube";
+    /// One row (Top HUD strip) instead of the full card (Sidebar).
+    in property <bool> compact;
+
+    property <bool> shown: HudState.watching && HudState.watching-site == root.site;
+
+    accessible-role: groupbox;
+    accessible-label: root.shown ? "Now watching: " + HudState.watching-title : "";
+    height: !root.shown ? 0px : root.compact ? 34px : 112px;
+    visible: root.shown;
+
+    if root.shown && root.compact : HorizontalLayout {
+        spacing: 8px;
+        Thumb { width: 48px; height: 27px; y: (parent.height - self.height) / 2; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            Text {
+                text: HudState.watching-title;
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.text;
+                overflow: elide;
+                TouchArea { mouse-cursor: pointer; clicked => { HudState.watching-open(); } }
+            }
+            SlimProgress {
+                value: HudState.watching-progress;
+                color: Theme.accent;
+                animated: false;
+                seekable: HudState.watching-can-seek;
+                seek(f) => { HudState.watching-seek(f); }
+            }
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            size: 26px;
+            icon-size: 13px;
+            icon: HudState.watching-playing ? @image-url("../icons/pause.svg") : @image-url("../icons/play.svg");
+            label: HudState.watching-playing ? "Pause" : "Play";
+            clicked => { HudState.watching-play-pause(); }
+        }
+    }
+
+    if root.shown && !root.compact : VerticalLayout {
+        spacing: 6px;
+        Overline { text: "NOW WATCHING · " + HudState.watching-browser; }
+        HorizontalLayout {
+            spacing: 10px;
+            Thumb { width: 96px; height: 54px; }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Text {
+                    text: HudState.watching-title;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.text;
+                    wrap: word-wrap;
+                    max-height: 36px;
+                    overflow: elide;
+                    TouchArea { mouse-cursor: pointer; clicked => { HudState.watching-open(); } }
+                }
+                if HudState.watching-subtitle != "" : Text {
+                    text: HudState.watching-subtitle;
+                    font-size: 12px;
+                    color: Theme.text2;
+                    overflow: elide;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                size: 28px;
+                icon-size: 14px;
+                icon: HudState.watching-playing ? @image-url("../icons/pause.svg") : @image-url("../icons/play.svg");
+                label: HudState.watching-playing ? "Pause" : "Play";
+                clicked => { HudState.watching-play-pause(); }
+            }
+            SlimProgress {
+                y: (parent.height - self.height) / 2;
+                value: HudState.watching-progress;
+                color: Theme.accent;
+                animated: false;
+                seekable: HudState.watching-can-seek;
+                seek(f) => { HudState.watching-seek(f); }
+            }
+        }
+    }
+}

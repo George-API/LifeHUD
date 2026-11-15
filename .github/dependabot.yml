@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # Slint's crates release together and must move together.
+      slint:
+        patterns: ["slint", "slint-build"]
+      minor-and-patch:
+        update-types: ["minor", "patch"]

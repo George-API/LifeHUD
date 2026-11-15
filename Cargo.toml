@@ -1,10 +1,12 @@
 [package]
 name = "lifehud"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+rust-version = "1.92"
 description = "A calm, native Windows 11 desktop HUD: weather, time, tasks, notes, news and music."
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/George-API/LifeHUD"
 keywords = ["windows", "desktop", "widgets", "hud", "slint"]
 categories = ["gui"]
 publish = false
@@ -12,11 +14,13 @@ publish = false
 [dependencies]
 quick-xml = "0.42.0"
 raw-window-handle = "0.6.2"
+# Same version Slint uses for SVGs (no extra build): rasterizes the sticker tiles once.
+resvg = { version = "0.48.1", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility", "raw-window-handle-06"] }
 ureq = { version = "3.5.2", default-features = false, features = ["native-tls"] }
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_System_Registry", "Win32_System_Threading", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_SystemInformation", "Win32_UI_Controls", "Media_Control", "Foundation", "Foundation_Collections", "Storage_Streams", "Graphics_Imaging", "Devices_Geolocation", "UI_ViewManagement", "UI", "Win32_Globalization"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_System_Registry", "Win32_System_Threading", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Credentials", "Win32_System_SystemInformation", "Media_Control", "Foundation", "Storage_Streams", "Graphics_Imaging", "Devices_Geolocation", "UI_ViewManagement", "UI", "Win32_Globalization", "Win32_System_Time", "Win32_Media_Audio", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Storage_Xps", "Win32_UI_Accessibility"] }
 
 [build-dependencies]
 slint-build = "1.18.1"

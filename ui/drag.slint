@@ -1,0 +1,42 @@
+// Pointer-drag bookkeeping shared by the Settings arrangers and the HUD's Edit Widgets mode.
+// Positions are in whatever coordinate space the owner reports them in; the owner decides what a
+// drop means.
+
+export component DragState {
+    /// 0 idle, 1 something already placed (a card), 2 something new (a palette or tray chip).
+    out property <int> kind;
+    out property <int> from: -1;
+    out property <string> wid;
+    out property <string> name;
+    out property <bool> dragging;
+    out property <length> px;
+    out property <length> py;
+    property <length> sx;
+    property <length> sy;
+
+    public function press(k: int, f: int, w: string, n: string, x: length, y: length) {
+        self.kind = k;
+        self.from = f;
+        self.wid = w;
+        self.name = n;
+        self.sx = x;
+        self.sy = y;
+        self.px = x;
+        self.py = y;
+        self.dragging = false;
+    }
+    public function move(x: length, y: length) {
+        if self.kind == 0 { return; }
+        self.px = x;
+        self.py = y;
+        // A few pixels of slack so a click with a shaky hand is still a click.
+        if !self.dragging && (abs(x - self.sx) > 4px || abs(y - self.sy) > 4px) {
+            self.dragging = true;
+        }
+    }
+    public function reset() {
+        self.kind = 0;
+        self.from = -1;
+        self.dragging = false;
+    }
+}

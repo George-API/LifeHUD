@@ -1,0 +1,410 @@
+// Building blocks shared by the feed widgets (Sports, YouTube, Reddit, Netflix, Stocks): quiet text
+// tabs, link rows, a wheel-friendly horizontal scroller for Top HUD tiles, and calm empty states.
+
+import { Theme } from "../theme.slint";
+import { IconButton, Overline, PillButton } from "../components.slint";
+import { LinkData, PlayerState } from "state.slint";
+
+/// Semantic colours tuned for glass, in both appearances.
+export global Tone {
+    out property <color> up: Theme.dark ? #32d74b : #1f8a3b;
+    out property <color> down: Theme.dark ? #ff5a52 : #d6302a;
+    out property <color> live: Theme.dark ? #ff453a : #e0352b;
+    out property <color> up-fill: Theme.dark ? #32d74b2e : #1f8a3b1f;
+    out property <color> down-fill: Theme.dark ? #ff5a522e : #d6302a1a;
+}
+
+/// Quiet text tabs with an accent underline, like the News widget's.
+export component FeedTabs {
+    in property <[string]> labels;
+    in-out property <int> index;
+    in property <length> font-size: 11px;
+    callback changed(int);
+    accessible-role: tab-list;
+
+    HorizontalLayout {
+        spacing: 12px;
+        for label[i] in root.labels : Rectangle {
+            width: t.preferred-width;
+            accessible-role: tab;
+            accessible-label: label;
+            accessible-item-selectable: true;
+            accessible-item-selected: i == root.index;
+            accessible-action-default => {
+                root.index = i;
+                root.changed(i);
+            }
+            t := Text {
+                text: label;
+                font-size: root.font-size;
+                font-weight: i == root.index ? 700 : 500;
+                color: i == root.index ? Theme.text : ta.has-hover ? Theme.text2 : Theme.text3;
+                animate color { duration: 150ms; }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 2px;
+                border-radius: 1px;
+                background: i == root.index ? Theme.accent : transparent;
+                animate background { duration: 150ms; }
+            }
+            ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.index = i;
+                    root.changed(i);
+                }
+            }
+        }
+    }
+}
+
+/// A pulsing-free live marker: a small solid dot (the software renderer can't afford a pulse).
+export component LiveDot inherits Rectangle {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    background: Tone.live;
+}
+
+/// Header line for Top HUD strips: tabs on the left, a quiet label on the right.
+export component StripHeader {
+    in property <[string]> labels;
+    in-out property <int> index;
+    in property <string> label;
+    in property <bool> live;
+    /// The label opens a menu (shown with a chevron).
+    in property <bool> menu;
+    callback changed(int);
+    callback menu-clicked();
+    HorizontalLayout {
+        spacing: 8px;
+        FeedTabs { labels: root.labels; index <=> root.index; changed(i) => { root.changed(i); } }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 5px;
+            if root.live : LiveDot { y: (parent.height - self.height) / 2; }
+            Overline {
+                text: root.label;
+                font-weight: root.live ? 600 : 400;
+                color: root.live ? Tone.live : root.menu && strip-menu.has-hover ? Theme.text : Theme.text3;
+                horizontal-alignment: right;
+                strip-menu := TouchArea {
+                    enabled: root.menu;
+                    mouse-cursor: root.menu ? pointer : default;
+                    clicked => { root.menu-clicked(); }
+                }
+            }
+            if root.menu : Image {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../icons/chevron-down.svg");
+                width: 9px;
+                height: 9px;
+                colorize: Theme.text3;
+            }
+        }
+    }
+}
+
+/// Header for Sidebar panels: title and tabs on one line, a quiet caption below.
+export component PanelHeader {
+    in property <string> title;
+    in property <[string]> labels;
+    in-out property <int> index;
+    in property <string> caption;
+    in property <bool> live;
+    /// The caption opens a menu (shown with a chevron).
+    in property <bool> menu;
+    callback changed(int);
+    callback menu-clicked();
+    // Fixed height: an empty card's spare space must not stretch the tabs.
+    vertical-stretch: 0;
+    VerticalLayout {
+        spacing: 4px;
+        HorizontalLayout {
+            Text { text: root.title; font-family: Theme.display-font; font-size: 15px; font-weight: 600; color: Theme.text; }
+            FeedTabs { font-size: 12px; labels: root.labels; index <=> root.index; changed(i) => { root.changed(i); } }
+        }
+        if root.caption != "" : HorizontalLayout {
+            spacing: 5px;
+            if root.live : LiveDot { y: (parent.height - self.height) / 2; }
+            Text {
+                text: root.caption;
+                font-size: 11px;
+                color: root.live ? Tone.live : root.menu && panel-menu.has-hover ? Theme.text : Theme.text3;
+                overflow: elide;
+                panel-menu := TouchArea {
+                    enabled: root.menu;
+                    mouse-cursor: root.menu ? pointer : default;
+                    clicked => { root.menu-clicked(); }
+                }
+            }
+            if root.menu : Image {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../icons/chevron-down.svg");
+                width: 9px;
+                height: 9px;
+                colorize: Theme.text3;
+            }
+        }
+    }
+}
+
+/// Horizontal tile row for the Top HUD. The mouse wheel scrolls it sideways (Flickable only maps
+/// Shift+wheel), and a soft fade at the edge hints at more.
+export component HScroll inherits Rectangle {
+    in property <length> content-width;
+    in-out property <length> offset;
+    property <length> min-offset: min(0px, root.width - root.content-width);
+    clip: true;
+
+    ta := TouchArea {
+        scroll-event(e) => {
+            if root.content-width <= root.width {
+                return reject;
+            }
+            root.offset = clamp(root.offset + (abs(e.delta-x) > abs(e.delta-y) ? e.delta-x : e.delta-y), root.min-offset, 0px);
+            accept
+        }
+        Rectangle {
+            x: clamp(root.offset, root.min-offset, 0px);
+            width: root.content-width;
+            height: root.height;
+            animate x { duration: 140ms; easing: ease-out; }
+            @children
+        }
+    }
+}
+
+/// Centred message with an optional action, for empty and offline states.
+export component Placeholder {
+    in property <string> text;
+    in property <string> action;
+    in property <bool> centered: true;
+    callback act;
+    HorizontalLayout {
+        alignment: root.centered ? center : start;
+        spacing: 10px;
+        Text {
+            text: root.text;
+            font-size: 13px;
+            color: Theme.text3;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            horizontal-alignment: root.centered ? center : left;
+            horizontal-stretch: 1;
+        }
+        if root.action != "" : VerticalLayout {
+            alignment: center;
+            PillButton { text: root.action; clicked => { root.act(); } }
+        }
+    }
+}
+
+/// Wrapped text cut cleanly at a number of lines. (Slint draws wrapped text past `max-height`, so
+/// a clip is the reliable way to cap it.)
+export component ClampText inherits Rectangle {
+    in property <string> text;
+    in property <length> font-size: 13px;
+    in property <int> font-weight: 400;
+    in property <color> ink: Theme.text;
+    in property <int> lines: 2;
+    // Segoe UI's line box is about 1.33em. Round up, with slack: if `lines` lines don't fully fit,
+    // elision drops to one line fewer.
+    property <length> line: ceil(root.font-size * 1.36 / 1px) * 1px;
+    clip: true;
+    height: min(t.preferred-height, root.lines * root.line);
+    t := Text {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        color: root.ink;
+        wrap: word-wrap;
+        // With the height fixed, the last visible line ends in "…" when there's more.
+        overflow: elide;
+    }
+}
+
+/// A rounded image with a quiet fill until it loads.
+export component Thumb inherits Rectangle {
+    in property <image> source;
+    in property <bool> loaded;
+    in property <image> fallback;
+    border-radius: 6px;
+    clip: true;
+    background: Theme.fill;
+    if !root.loaded && root.fallback.width > 0 : Image {
+        source: root.fallback;
+        width: min(parent.width, parent.height) * 0.42;
+        colorize: Theme.text3;
+    }
+    if root.loaded : Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.source;
+        image-fit: cover;
+    }
+}
+
+/// One link: a single line with a meta label (Top HUD), or a thumbnail and two lines (Sidebar).
+export component LinkRow {
+    in property <LinkData> item;
+    accessible-role: button;
+    accessible-label: root.item.title + ", " + root.item.meta;
+    accessible-action-default => { root.open(root.item.url); }
+    in property <bool> rich;
+    in property <image> fallback;
+    in property <length> row-height: 22px;
+    callback open(string);
+
+    height: root.rich ? 58px : root.row-height;
+
+    Rectangle {
+        x: -6px;
+        width: root.width + 12px;
+        border-radius: 6px;
+        background: ta.has-hover ? Theme.fill : transparent;
+        animate background { duration: 120ms; }
+    }
+
+    if !root.rich : HorizontalLayout {
+        spacing: 10px;
+        Text { text: root.item.title; font-size: 13px; color: Theme.text; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+        Text { text: root.item.short != "" ? root.item.short : root.item.meta; font-size: 11px; color: Theme.text3; vertical-alignment: center; horizontal-stretch: 0; max-width: 140px; overflow: elide; }
+    }
+
+    if root.rich : HorizontalLayout {
+        spacing: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            ClampText { text: root.item.title; font-size: 13px; }
+            Text { text: root.item.meta; font-size: 11px; color: Theme.text3; overflow: elide; }
+        }
+        if root.item.has-thumb || root.fallback.width > 0 : Thumb {
+            width: 46px;
+            height: 46px;
+            y: (parent.height - self.height) / 2;
+            source: root.item.thumb;
+            loaded: root.item.has-thumb;
+            fallback: root.fallback;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.open(root.item.url); }
+    }
+}
+
+/// A vertical list that shows a slim scroll indicator when it overflows, so a half-visible last row
+/// reads as "more below" rather than a clipping bug.
+export component FeedScroll inherits Rectangle {
+    in property <length> content-height;
+    flick := Flickable {
+        width: root.width;
+        height: root.height;
+        content-height: root.content-height;
+        @children
+    }
+    if root.content-height > root.height + 1px : Rectangle {
+        x: root.width + 5px;
+        width: 3px;
+        height: max(14px, root.height * root.height / root.content-height);
+        y: -flick.content-y / max(1px, root.content-height - root.height) * (root.height - self.height);
+        border-radius: 1.25px;
+        background: Theme.track;
+    }
+}
+
+export component LinkList {
+    in property <[LinkData]> items;
+    in property <bool> rich;
+    in property <image> fallback;
+    /// One-line rows: 22px, or less in a very short strip.
+    in property <length> row-height: 22px;
+    callback open(string);
+    FeedScroll {
+        width: root.width;
+        height: root.height;
+        content-height: list.preferred-height;
+        list := VerticalLayout {
+            alignment: start;
+            for n[i] in root.items : VerticalLayout {
+                if i > 0 : Rectangle { height: 1px; background: Theme.divider; }
+                LinkRow { item: n; rich: root.rich; fallback: root.fallback; row-height: root.row-height; open(u) => { root.open(u); } }
+            }
+        }
+    }
+}
+
+/// A small section label inside a list ("LIVE", "UPCOMING").
+export component SectionLabel inherits Overline {
+    height: 22px;
+    vertical-alignment: bottom;
+}
+
+/// Where a docked video plays: a black frame that Life HUD keeps an Edge window exactly over. It
+/// reports its place in the window whenever that changes (layout, size, scrolling).
+export component PlayerSlot inherits Rectangle {
+    background: #000;
+    border-radius: 8px;
+    property <length> ax: self.absolute-position.x;
+    property <length> ay: self.absolute-position.y;
+    function report() {
+        PlayerState.x = root.ax;
+        PlayerState.y = root.ay;
+        PlayerState.width = root.width;
+        PlayerState.height = root.height;
+    }
+    init => { root.report(); }
+    changed ax => { root.report(); }
+    changed ay => { root.report(); }
+    changed width => { root.report(); }
+    changed height => { root.report(); }
+    accessible-role: groupbox;
+    accessible-label: "Video player: " + PlayerState.title;
+    if PlayerState.loading : Text {
+        text: "Loading…";
+        font-size: 12px;
+        color: #ffffff8c;
+    }
+}
+
+/// The docked video's title, with "open in browser" and close.
+export component PlayerBar {
+    in property <length> font-size: 12px;
+    HorizontalLayout {
+        spacing: 4px;
+        Text {
+            text: PlayerState.title;
+            font-size: root.font-size;
+            font-weight: 600;
+            color: Theme.text;
+            overflow: elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        IconButton {
+            size: 24px;
+            icon-size: 13px;
+            icon: @image-url("../icons/external.svg");
+            label: "Open in browser";
+            clicked => { PlayerState.pop-out(); }
+        }
+        IconButton {
+            size: 24px;
+            icon-size: 11px;
+            icon: @image-url("../icons/xmark.svg");
+            label: "Close video";
+            clicked => { PlayerState.close(); }
+        }
+    }
+}

@@ -1,0 +1,33 @@
+// Swappable widgets: whichever widget the user picked for a slot (kinds index `settings::WIDGETS`).
+
+import { TodayStrip } from "../widgets/today.slint";
+import { NewsStrip, NewsPanel } from "../widgets/news.slint";
+import { SportsStrip, SportsPanel } from "../widgets/sports.slint";
+import { YouTubeStrip, YouTubePanel } from "../widgets/youtube.slint";
+import { RedditStrip, RedditPanel } from "../widgets/reddit.slint";
+import { NetflixStrip, NetflixPanel } from "../widgets/netflix.slint";
+import { StocksStrip, StocksPanel } from "../widgets/stocks.slint";
+
+/// A flexible Top HUD slot (Tasks & Notes, News or any feed widget).
+export component SlotStrip {
+    in property <int> kind;
+    if root.kind == 2 : TodayStrip { width: parent.width; height: parent.height; }
+    if root.kind == 3 : NewsStrip { width: parent.width; height: parent.height; }
+    if root.kind == 4 : SportsStrip { width: parent.width; height: parent.height; }
+    if root.kind == 5 : YouTubeStrip { width: parent.width; height: parent.height; }
+    if root.kind == 6 : RedditStrip { width: parent.width; height: parent.height; }
+    if root.kind == 7 : NetflixStrip { width: parent.width; height: parent.height; }
+    if root.kind == 8 : StocksStrip { width: parent.width; height: parent.height; }
+}
+
+/// A feed card in the Sidebar (kinds 4 and up; the original four are placed by hud.slint).
+export component FeedPanel inherits VerticalLayout {
+    in property <int> kind;
+    /// A slim Sidebar: rows drop secondary details (records, sparklines) to keep names and prices.
+    in property <bool> narrow;
+    if root.kind == 4 : SportsPanel { narrow: root.narrow; vertical-stretch: 1; }
+    if root.kind == 5 : YouTubePanel { vertical-stretch: 1; }
+    if root.kind == 6 : RedditPanel { vertical-stretch: 1; }
+    if root.kind == 7 : NetflixPanel { vertical-stretch: 1; }
+    if root.kind == 8 : StocksPanel { narrow: root.narrow; vertical-stretch: 1; }
+}

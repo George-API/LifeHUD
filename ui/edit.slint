@@ -1,0 +1,418 @@
+// Edit Widgets mode: the pieces laid over the live HUD while you rearrange it. hud.slint places
+// them and owns the drag (see drag.slint); these only draw and report pointer positions in the
+// HUD's coordinates (each piece is told its own offset, `ox`/`oy`).
+//
+// The software renderer ignores transforms, so nothing here rotates or scales: "lifted" is a
+// shadow and a placeholder, and "editable" is a slow breathing outline rather than a jiggle.
+
+import { Theme } from "theme.slint";
+
+/// A widget that isn't on the HUD, offered in the tray.
+export struct EditChip {
+    id: string,
+    name: string,
+}
+
+/// The contract between Rust and Edit Widgets mode (src/app.rs). Positions are indexes into the
+/// HUD's one widget list (settings::Settings::hud_widgets).
+export global EditState {
+    in-out property <bool> editing;
+    /// Widgets not on the HUD.
+    in property <[EditChip]> extras;
+    in property <bool> full;
+    in property <int> count;
+    in property <int> capacity: 4;
+    in property <bool> can-undo;
+    /// Widget ids and names by kind (index into settings::WIDGETS).
+    in property <[string]> ids;
+    in property <[string]> names;
+    /// Long-press on the HUD (or Settings) asks to start editing.
+    callback begin();
+    callback done();
+    /// Move the card at `from` to before the card at `to` (an insertion index).
+    callback place(int, int);
+    callback insert(string, int);
+    callback replace(int, string);
+    callback remove(int);
+    /// Keyboard and screen readers: move the card at `index` one place (`delta` is -1 or 1).
+    callback nudge(int, int);
+    callback undo();
+}
+
+export global EditLook {
+    pure public function icon(wid: string) -> image {
+        return wid == "weather" ? @image-url("icons/cloud.svg")
+            : wid == "music" ? @image-url("icons/music.svg")
+            : wid == "today" ? @image-url("icons/check.svg")
+            : wid == "news" ? @image-url("icons/newspaper.svg")
+            : wid == "sports" ? @image-url("icons/sports.svg")
+            : wid == "youtube" ? @image-url("icons/youtube.svg")
+            : wid == "reddit" ? @image-url("icons/reddit.svg")
+            : wid == "netflix" ? @image-url("icons/netflix.svg")
+            : wid == "stocks" ? @image-url("icons/stocks.svg")
+            : @image-url("icons/widgets.svg");
+    }
+    out property <color> sheet: Theme.dark ? #1c1c1eeb : #f2f2f7f0;
+    out property <color> chip: Theme.dark ? #ffffff14 : #ffffffd9;
+    out property <color> chip-hover: Theme.dark ? #ffffff24 : #ffffff;
+    out property <color> badge: Theme.dark ? #48484a : #d1d1d6;
+    out property <color> danger: #ff453a;
+    out property <color> ghost: Theme.dark ? #2c2c2ef5 : #fffffff5;
+    // Apple's easing for things settling into place.
+    out property <easing> settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/// Laid exactly over one card on the HUD while editing. It swallows clicks so the widget underneath
+/// doesn't react, breathes gently, and offers a remove badge.
+export component EditOutline {
+    in property <string> name;
+    in property <bool> removable: true;
+    /// This card is the one being dragged: show where it came from.
+    in property <bool> lifted;
+    /// Something from the tray is hovering over this card and would replace it on drop.
+    in property <bool> replace-target;
+    /// Any drag is in progress (hides the badge and hover states).
+    in property <bool> busy;
+    /// This card just landed here: a brief glow so the eye can follow it.
+    in property <bool> landed;
+    /// This piece's offset in the HUD, so positions can be reported in HUD coordinates.
+    in property <length> ox;
+    in property <length> oy;
+    in property <length> radius: 14px;
+    callback pressed(length, length);
+    callback moved(length, length);
+    callback released();
+    callback cancelled();
+    callback remove();
+    callback nudge(int);
+
+    property <bool> breathe;
+    Timer {
+        interval: 1300ms;
+        running: !root.lifted && !root.replace-target;
+        triggered => { root.breathe = !root.breathe; }
+    }
+
+    accessible-role: button;
+    accessible-label: root.name + ", editing. Drag to move" + (root.removable ? ", or remove it" : "");
+    accessible-action-decrement => { root.nudge(-1); }
+    accessible-action-increment => { root.nudge(1); }
+
+    // The placeholder left behind by a lifted card: a quiet, empty slot.
+    Rectangle {
+        border-radius: root.radius;
+        background: root.lifted ? Theme.dark ? #000000a6 : #ffffffb3
+            : root.landed ? Theme.accent.transparentize(0.8)
+            : ta.has-hover && !root.busy ? #ffffff0a : transparent;
+        animate background { duration: root.landed ? 120ms : 420ms; easing: EditLook.settle; }
+    }
+
+    Rectangle {
+        border-radius: root.radius;
+        border-width: root.replace-target ? 2.5px : 1.5px;
+        border-color: root.replace-target ? Theme.accent
+            : root.lifted ? Theme.accent.transparentize(0.6)
+            : root.breathe ? Theme.accent.transparentize(0.25) : Theme.accent.transparentize(0.7);
+        animate border-color { duration: root.lifted || root.replace-target ? 150ms : 1300ms; easing: ease-in-out; }
+        animate border-width { duration: 150ms; }
+    }
+
+    if root.replace-target : Rectangle {
+        width: label.preferred-width + 20px;
+        height: 24px;
+        border-radius: 12px;
+        background: Theme.accent;
+        label := Text { text: "Replace"; font-size: 12px; font-weight: 600; color: Theme.on-accent; }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: root.busy ? MouseCursor.grabbing : MouseCursor.grab;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                root.pressed(root.ox + self.mouse-x, root.oy + self.mouse-y);
+            } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                root.released();
+            } else if e.kind == PointerEventKind.cancel {
+                root.cancelled();
+            }
+        }
+        moved => { root.moved(root.ox + self.mouse-x, root.oy + self.mouse-y); }
+    }
+
+    // The remove badge sits on the corner, half outside the card, like the iPhone's.
+    if root.removable && !root.busy : Rectangle {
+        x: -7px;
+        y: -7px;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        background: rm.has-hover ? EditLook.danger : EditLook.badge;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: #00000040;
+        animate background { duration: 120ms; }
+        accessible-role: button;
+        accessible-label: "Remove " + root.name;
+        accessible-action-default => { root.remove(); }
+        Rectangle {
+            width: 10px;
+            height: 2px;
+            border-radius: 1px;
+            background: rm.has-hover ? #ffffff : Theme.text;
+        }
+        rm := TouchArea { mouse-cursor: pointer; clicked => { root.remove(); } }
+    }
+}
+
+/// Where a dragged widget will land: an accent bar with rounded ends.
+export component InsertLine inherits Rectangle {
+    in property <bool> vertical;
+    border-radius: 2px;
+    background: Theme.accent;
+    drop-shadow-blur: 6px;
+    drop-shadow-color: Theme.accent.transparentize(0.5);
+}
+
+/// The floating copy of whatever is being dragged.
+export component EditGhost inherits Rectangle {
+    in property <string> wid;
+    in property <string> name;
+    width: 168px;
+    height: 44px;
+    border-radius: 12px;
+    background: EditLook.ghost;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 10px;
+    drop-shadow-color: #00000066;
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 12px;
+        spacing: 9px;
+        Rectangle {
+            width: 26px;
+            height: 26px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 7px;
+            background: Theme.fill;
+            Image { source: EditLook.icon(root.wid); width: 15px; height: 15px; colorize: Theme.text; }
+        }
+        Text {
+            text: root.name;
+            font-size: 13px;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+component TrayChip inherits Rectangle {
+    in property <string> wid;
+    in property <string> name;
+    in property <bool> faded;
+    in property <bool> busy;
+    in property <length> ox;
+    in property <length> oy;
+    callback pressed(length, length);
+    callback moved(length, length);
+    callback released(bool);
+    callback cancelled();
+
+    height: 38px;
+    border-radius: 10px;
+    background: ta.has-hover && !root.busy ? EditLook.chip-hover : EditLook.chip;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    opacity: root.faded ? 0.35 : 1;
+    animate background, opacity { duration: 140ms; }
+    accessible-role: button;
+    accessible-label: "Add " + root.name;
+    accessible-action-default => { root.released(false); }
+
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 10px;
+        spacing: 8px;
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 7px;
+            background: Theme.fill;
+            Image { source: EditLook.icon(root.wid); width: 14px; height: 14px; colorize: Theme.text; }
+        }
+        Text {
+            text: root.name;
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: root.busy ? MouseCursor.grabbing : MouseCursor.grab;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                root.pressed(root.ox + self.mouse-x, root.oy + self.mouse-y);
+            } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                root.released(true);
+            } else if e.kind == PointerEventKind.cancel {
+                root.cancelled();
+            }
+        }
+        moved => { root.moved(root.ox + self.mouse-x, root.oy + self.mouse-y); }
+    }
+}
+
+/// A rounded text button for the tray: Done (accent) and Undo.
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <bool> primary;
+    callback clicked();
+    width: t.preferred-width + (root.primary ? 26px : 20px);
+    min-height: 24px;
+    border-radius: self.height / 2;
+    background: root.primary ? (ta.pressed ? Theme.accent.darker(0.15) : Theme.accent) : (ta.has-hover ? Theme.fill-hover : Theme.fill);
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    t := Text {
+        text: root.text;
+        font-size: 12px;
+        font-weight: root.primary ? 700 : 600;
+        color: root.primary ? Theme.on-accent : Theme.text;
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+/// The frosted sheet of widgets that aren't on the HUD, with Undo and Done. In the Sidebar it sits
+/// under the cards (header above, chips in a grid); in the Top HUD it takes the clock's place
+/// (`compact`: header on the left, chips filling the bar's height).
+export component ExtrasTray inherits Rectangle {
+    in property <[EditChip]> chips;
+    in property <bool> compact;
+    /// The HUD holds as many widgets as it can: new ones swap in by dropping onto a card.
+    in property <bool> full;
+    in property <int> count;
+    in property <int> capacity: 4;
+    in property <bool> can-undo;
+    /// A card is being dragged (the sheet becomes a drop-to-remove target).
+    in property <bool> card-drag;
+    /// The HUD needs at least one widget.
+    in property <bool> can-remove: true;
+    /// Which chip is being dragged, to fade it.
+    in property <string> dragging-id;
+    in property <bool> busy;
+    /// This sheet's offset in the HUD, and the pointer in HUD coordinates.
+    in property <length> ox;
+    in property <length> oy;
+    in property <length> px;
+    in property <length> py;
+    out property <bool> pointer-inside: root.px >= root.ox && root.px < root.ox + root.width
+        && root.py >= root.oy && root.py < root.oy + root.height;
+    callback chip-pressed(string, string, length, length);
+    callback chip-moved(length, length);
+    callback chip-released(string, bool);
+    callback chip-cancelled();
+    callback undo();
+    callback done();
+
+    property <bool> remove-hot: root.card-drag && root.pointer-inside;
+    property <length> pad: root.compact ? 8px : 12px;
+    property <length> gap: 8px;
+    property <length> chip-h: 38px;
+    property <length> head-h: 34px;
+    property <length> head-w: 148px;
+    property <length> chips-x: root.pad + (root.compact ? root.head-w + 10px : 0);
+    property <length> chips-y: root.pad + (root.compact ? 0 : root.head-h);
+    property <length> avail-w: root.width - root.chips-x - root.pad;
+    property <int> fit-rows: max(1, floor((root.height - 2 * root.pad + root.gap) / (root.chip-h + root.gap)));
+    property <int> columns: root.compact ? max(1, ceil(root.chips.length / root.fit-rows)) : 2;
+    property <length> chip-w: (root.avail-w - (root.columns - 1) * root.gap) / root.columns;
+    property <int> rows: ceil(root.chips.length / 2);
+
+    preferred-height: root.pad + root.head-h + max(root.rows, 1) * (root.chip-h + root.gap) + root.pad - root.gap;
+    border-radius: 16px;
+    background: root.remove-hot && root.can-remove ? EditLook.danger.transparentize(0.82) : EditLook.sheet;
+    border-width: 1px;
+    border-color: root.remove-hot && root.can-remove ? EditLook.danger.transparentize(0.4) : Theme.edge;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: root.compact ? 4px : -4px;
+    drop-shadow-color: #00000059;
+    animate background, border-color { duration: 160ms; }
+
+    // Swallow clicks on the sheet itself, so they don't count as "click outside to finish".
+    TouchArea { }
+
+    // Header: how full the HUD is (or what dropping here does), Undo and Done.
+    property <string> status: root.card-drag ? (root.can-remove ? "Drop here to remove" : "The HUD needs one widget")
+        : root.full ? "Full \u{b7} drop onto a widget to swap"
+        : root.count + " of " + root.capacity + " \u{b7} drag a widget in";
+    property <color> status-color: root.remove-hot && root.can-remove ? EditLook.danger : Theme.text2;
+
+    if !root.compact : HorizontalLayout {
+        x: root.pad;
+        y: root.pad - 2px;
+        width: root.width - 2 * root.pad;
+        height: root.head-h - 6px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.status; font-size: 12px; font-weight: 600; color: root.status-color; overflow: elide; }
+        }
+        if root.can-undo && !root.card-drag : Pill { text: "Undo"; clicked => { root.undo(); } }
+        if !root.card-drag : Pill { text: "Done"; primary: true; label: "Done editing widgets"; clicked => { root.done(); } }
+    }
+
+    if root.compact : VerticalLayout {
+        x: root.pad;
+        y: root.pad;
+        width: root.head-w;
+        height: root.height - 2 * root.pad;
+        alignment: center;
+        spacing: 6px;
+        Text { text: root.status; font-size: 11px; font-weight: 600; color: root.status-color; wrap: word-wrap; }
+        if !root.card-drag : HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            height: 26px;
+            Pill { text: "Done"; primary: true; label: "Done editing widgets"; clicked => { root.done(); } }
+            if root.can-undo : Pill { text: "Undo"; clicked => { root.undo(); } }
+        }
+    }
+
+    if root.chips.length == 0 && !root.card-drag : Text {
+        x: root.chips-x;
+        y: root.chips-y;
+        width: root.avail-w;
+        height: root.compact ? root.height - 2 * root.pad : root.chip-h;
+        text: "Every widget is on the HUD.";
+        font-size: 12px;
+        color: Theme.text3;
+        vertical-alignment: center;
+    }
+
+    for chip[i] in root.chips : TrayChip {
+        x: root.chips-x + mod(i, root.columns) * (root.chip-w + root.gap);
+        y: root.chips-y + floor(i / root.columns) * (root.chip-h + root.gap);
+        width: root.chip-w;
+        height: root.chip-h;
+        wid: chip.id;
+        name: chip.name;
+        busy: root.busy;
+        faded: root.busy && root.dragging-id == chip.id;
+        opacity: root.card-drag ? 0.25 : self.faded ? 0.35 : 1;
+        ox: root.ox + self.x;
+        oy: root.oy + self.y;
+        pressed(x, y) => { root.chip-pressed(chip.id, chip.name, x, y); }
+        moved(x, y) => { root.chip-moved(x, y); }
+        released(by-pointer) => { root.chip-released(chip.id, by-pointer); }
+        cancelled => { root.chip-cancelled(); }
+    }
+}

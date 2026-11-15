@@ -8,13 +8,36 @@ export component Chrome {
 
     hover := TouchArea { }
 
+    // Top HUD: the buttons stack in the strip's height, so they shrink on short strips.
+    property <int> top-count: HudState.ai-button ? 4 : 3;
+
+    // The theme menu opens when the pointer rests on the paintbrush (or on click). Once per hover:
+    // dismissing it while still pointing at the button doesn't pop it straight back open.
+    property <bool> theme-opened;
+    property <duration> hover-intent: 350ms;
+    property <length> top-size: min(32px, (root.height - 2px * (self.top-count - 1)) / self.top-count);
+
     if !root.vertical : VerticalLayout {
         alignment: center;
         spacing: 2px;
         opacity: hover.has-hover ? 1 : 0.72;
         animate opacity { duration: 200ms; }
-        IconButton { size: 32px; icon-size: 17px; icon: @image-url("../icons/gear.svg"); clicked => { HudState.open-settings(); } }
-        IconButton { size: 32px; icon-size: 17px; icon: @image-url("../icons/sidebar-left.svg"); clicked => { HudState.toggle-layout(); } }
+        if HudState.ai-button : IconButton { size: root.top-size; icon-size: root.top-size * 0.53; icon: @image-url("../icons/search.svg"); label: "Search & AI"; clicked => { HudState.open-chat(); } }
+        theme-top := IconButton {
+            size: root.top-size;
+            icon-size: root.top-size * 0.53;
+            icon: @image-url("../icons/paintbrush.svg");
+            label: "Theme";
+            clicked => { root.theme-opened = true; HudState.open-themes(); }
+            changed hovered => { if !self.hovered { root.theme-opened = false; } }
+        }
+        Timer {
+            interval: root.hover-intent;
+            running: theme-top.hovered && !root.theme-opened;
+            triggered => { root.theme-opened = true; HudState.open-themes(); }
+        }
+        IconButton { size: root.top-size; icon-size: root.top-size * 0.53; icon: @image-url("../icons/gear.svg"); label: "Settings"; clicked => { HudState.open-settings(); } }
+        IconButton { size: root.top-size; icon-size: root.top-size * 0.53; icon: @image-url("../icons/sidebar-left.svg"); label: "Switch layout"; clicked => { HudState.toggle-layout(); } }
     }
 
     if root.vertical : HorizontalLayout {
@@ -22,8 +45,22 @@ export component Chrome {
         spacing: 2px;
         opacity: hover.has-hover ? 1 : 0.72;
         animate opacity { duration: 200ms; }
-        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/minus.svg"); clicked => { HudState.hide-hud(); } }
-        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/sidebar-top.svg"); clicked => { HudState.toggle-layout(); } }
-        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/gear.svg"); clicked => { HudState.open-settings(); } }
+        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/minus.svg"); label: "Hide"; clicked => { HudState.hide-hud(); } }
+        if HudState.ai-button : IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/search.svg"); label: "Search & AI"; clicked => { HudState.open-chat(); } }
+        theme-side := IconButton {
+            size: 30px;
+            icon-size: 16px;
+            icon: @image-url("../icons/paintbrush.svg");
+            label: "Theme";
+            clicked => { root.theme-opened = true; HudState.open-themes(); }
+            changed hovered => { if !self.hovered { root.theme-opened = false; } }
+        }
+        Timer {
+            interval: root.hover-intent;
+            running: theme-side.hovered && !root.theme-opened;
+            triggered => { root.theme-opened = true; HudState.open-themes(); }
+        }
+        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/sidebar-top.svg"); label: "Switch layout"; clicked => { HudState.toggle-layout(); } }
+        IconButton { size: 30px; icon-size: 16px; icon: @image-url("../icons/gear.svg"); label: "Settings"; clicked => { HudState.open-settings(); } }
     }
 }

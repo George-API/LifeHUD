@@ -2,8 +2,13 @@
 //! to thin, documented wrappers around Win32/WinRT calls.
 
 pub mod appbar;
+pub mod browsers;
+pub mod credentials;
+pub mod docked;
 pub mod effects;
+pub mod install;
 pub mod instance;
+pub mod menu;
 pub mod monitors;
 pub mod reflow;
 pub mod startup;

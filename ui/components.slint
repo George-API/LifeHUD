@@ -17,12 +17,12 @@ export component Card inherits Rectangle {
         height: parent.height;
         set: Theme.sticker-set;
         ink: Theme.text;
-        strength: Theme.dark ? 0.07 : 0.09;
+        strength: Theme.dark ? 0.10 : 0.12;
     }
 }
 
 export component Overline inherits Text {
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.4px;
     color: Theme.text3;
@@ -34,11 +34,18 @@ export component IconButton {
     in property <length> size: 26px;
     in property <length> icon-size: 14px;
     in property <bool> enabled: true;
-    in property <angle> rotation: 0deg;
+    /// What the button does, for screen readers and UI automation ("Settings", "Switch layout").
+    in property <string> label;
+    /// The pointer is over the button (for hover-to-open menus).
+    out property <bool> hovered: ta.has-hover;
     callback clicked;
 
     width: root.size;
     height: root.size;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
 
     bg := Rectangle {
         border-radius: 7px;
@@ -46,15 +53,14 @@ export component IconButton {
         animate background { duration: 120ms; }
     }
 
+    // No transform-scale/-rotation here or anywhere in the UI: the software renderer ignores
+    // them, so animating them only spends frames on changes nobody can see.
     Image {
         source: root.icon;
         width: root.icon-size;
         height: root.icon-size;
         colorize: ta.has-hover && root.enabled ? Theme.text : Theme.text2;
         opacity: root.enabled ? 1 : 0.35;
-        transform-rotation: root.rotation;
-        transform-scale: ta.pressed ? 0.86 : 1;
-        animate transform-scale { duration: 140ms; easing: ease-out; }
     }
 
     ta := TouchArea {
@@ -71,13 +77,14 @@ export component PlayButton {
 
     width: root.size;
     height: root.size;
+    accessible-role: button;
+    accessible-label: root.playing ? "Pause" : "Play";
+    accessible-action-default => { root.clicked(); }
 
     Rectangle {
         border-radius: self.height / 2;
         background: Theme.play-bg;
         opacity: ta.has-hover ? 0.88 : 1;
-        transform-scale: ta.pressed ? 0.88 : 1;
-        animate transform-scale { duration: 160ms; easing: ease-out; }
 
         Image {
             source: root.playing ? @image-url("icons/pause.svg") : @image-url("icons/play.svg");
@@ -129,10 +136,11 @@ export component PillButton {
 export component GhostLineEdit {
     in-out property <string> text;
     in property <string> placeholder;
-    in property <length> font-size: 12.5px;
+    in property <length> font-size: 13px;
     callback accepted(string);
 
     min-height: 18px;
+    forward-focus: input;
 
     if root.text == "" && input.preedit-text == "" : Text {
         x: 0;
@@ -226,12 +234,13 @@ export component TaskCheck {
     in property <bool> checked;
     callback toggled;
 
-    width: 17px;
-    height: 17px;
+    // Even size, whole-pixel ring and an evenly centred tick keep the circle sharp.
+    width: 18px;
+    height: 18px;
 
     Rectangle {
         border-radius: self.width / 2;
-        border-width: 1.5px;
+        border-width: 2px;
         border-color: ta.has-hover ? Theme.text2 : Theme.text3;
         opacity: root.checked ? 0 : 1;
         animate opacity { duration: 120ms; }
@@ -241,14 +250,12 @@ export component TaskCheck {
         border-radius: self.width / 2;
         background: Theme.accent;
         opacity: root.checked ? 1 : 0;
-        transform-scale: root.checked ? 1 : 0.4;
         animate opacity { duration: 120ms; }
-        animate transform-scale { duration: 320ms; easing: cubic-bezier(0.34, 1.56, 0.64, 1); }
 
         Image {
             source: @image-url("icons/check.svg");
-            width: 13px;
-            height: 13px;
+            width: 12px;
+            height: 12px;
             colorize: Theme.on-accent;
         }
     }
@@ -262,20 +269,66 @@ export component TaskCheck {
 export component SlimProgress {
     in property <float> value;
     in property <color> color: Theme.text;
+    /// Ease between values. Turn off for values that tick steadily (media position updates every
+    /// second, so easing each step would keep the renderer busy for no visible gain).
+    in property <bool> animated: true;
+    /// Clickable: hovering thickens the bar and shows a knob; click or drag to jump there.
+    in property <bool> seekable;
+    /// Fired on release with the chosen fraction (0..1).
+    callback seek(float);
+    /// Also report the fraction continuously while dragging (volume follows the finger).
+    in property <bool> live;
+    callback scrub(float);
 
-    height: 3px;
+    property <bool> active: root.seekable && (ta.has-hover || ta.pressed);
+    /// While dragging, the bar follows the pointer instead of the player.
+    property <float> shown: ta.pressed && root.seekable ? clamp(ta.mouse-x / root.width, 0, 1) : clamp(root.value, 0, 1);
+    property <length> thickness: root.active ? 6px : 4px;
+
+    // A taller invisible hit area than the bar itself, so it's easy to grab.
+    height: root.seekable ? 14px : 4px;
 
     Rectangle {
-        border-radius: 1.5px;
+        y: (root.height - root.thickness) / 2;
+        height: root.thickness;
+        border-radius: root.thickness / 2;
         background: Theme.track;
+        animate height, y { duration: 120ms; }
     }
-
     Rectangle {
         x: 0;
-        width: clamp(root.value, 0, 1) * root.width;
-        border-radius: 1.5px;
+        y: (root.height - root.thickness) / 2;
+        height: root.thickness;
+        width: root.shown * root.width;
+        border-radius: root.thickness / 2;
         background: root.color;
-        animate width { duration: 300ms; easing: ease-out; }
+        animate width { duration: root.animated && !ta.pressed ? 300ms : 0ms; easing: ease-out; }
+        animate height, y { duration: 120ms; }
+    }
+    if root.active : Rectangle {
+        width: 12px;
+        height: 12px;
+        x: clamp(root.shown * root.width - 6px, -6px, root.width - 6px);
+        y: (root.height - 12px) / 2;
+        border-radius: 6px;
+        background: root.color;
+        drop-shadow-blur: 3px;
+        drop-shadow-color: #00000059;
+    }
+
+    ta := TouchArea {
+        enabled: root.seekable;
+        mouse-cursor: root.seekable ? pointer : default;
+        pointer-event(e) => {
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                root.seek(clamp(self.mouse-x / root.width, 0, 1));
+            }
+        }
+        moved => {
+            if root.live {
+                root.scrub(clamp(self.mouse-x / root.width, 0, 1));
+            }
+        }
     }
 }
 
@@ -346,7 +399,7 @@ export component RangeBar {
         height: 7px;
         border-radius: 3.5px;
         background: white;
-        border-width: 1.5px;
+        border-width: 2px;
         border-color: Theme.track;
     }
 }

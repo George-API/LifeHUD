@@ -1,0 +1,79 @@
+// Reddit: your subreddits (one combined feed) and r/popular. Posts open in the browser.
+
+import { Theme } from "../theme.slint";
+import { Card } from "../components.slint";
+import { LinkData, RedditState } from "../feeds/state.slint";
+import { LinkList, PanelHeader, Placeholder, StripHeader } from "../feeds/common.slint";
+
+export component RedditStrip inherits Card {
+    property <[LinkData]> items: RedditState.tab == 0 ? RedditState.yours : RedditState.popular;
+    property <string> caption: RedditState.tab == 0 && RedditState.label != "" ? RedditState.label + " · " + RedditState.sort : RedditState.sort;
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 8px;
+        padding-bottom: 6px;
+        spacing: 3px;
+        StripHeader {
+            labels: ["Yours", "Popular"];
+            index <=> RedditState.tab;
+            label: root.caption;
+            menu: RedditState.tab == 0;
+            menu-clicked => { RedditState.choose(); }
+        }
+        if root.items.length > 0 : LinkList {
+            vertical-stretch: 1;
+            // Exactly three rows (and their two 1px dividers) fill the strip, so none peeks in below.
+            row-height: max(15px, (self.height - 2px) / 3);
+            items: root.items;
+            open(u) => { RedditState.open(u); }
+        }
+        if root.items.length == 0 : Placeholder {
+            vertical-stretch: 1;
+            centered: false;
+            text: RedditState.tab == 0 ? RedditState.placeholder : RedditState.popular-placeholder;
+            action: RedditState.tab == 0 && !RedditState.has-subreddits ? "Choose subreddits" : "";
+            act => { RedditState.customize(); }
+        }
+    }
+}
+
+export component RedditPanel inherits Card {
+    property <[LinkData]> items: RedditState.tab == 0 ? RedditState.yours : RedditState.popular;
+    property <string> caption: RedditState.tab == 0 && RedditState.label != "" ? RedditState.label + " · " + RedditState.sort : RedditState.sort;
+    VerticalLayout {
+        padding: 16px;
+        padding-bottom: 10px;
+        spacing: 6px;
+        PanelHeader {
+            title: "Reddit";
+            labels: ["Yours", "Popular"];
+            index <=> RedditState.tab;
+            caption: root.caption;
+            menu: RedditState.tab == 0;
+            menu-clicked => { RedditState.choose(); }
+        }
+        if root.items.length > 0 : LinkList {
+            vertical-stretch: 1;
+            min-height: 100px;
+            preferred-height: 180px;
+            rich: true;
+            // Discussion threads have no image: a quiet Reddit tile keeps every row the same shape.
+            fallback: @image-url("../icons/reddit.svg");
+            items: root.items;
+            open(u) => { RedditState.open(u); }
+        }
+        if root.items.length == 0 : VerticalLayout {
+            vertical-stretch: 1;
+            alignment: start;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            Placeholder {
+                centered: false;
+                text: RedditState.tab == 0 ? RedditState.placeholder : RedditState.popular-placeholder;
+                action: RedditState.tab == 0 && !RedditState.has-subreddits ? "Choose subreddits" : "";
+                act => { RedditState.customize(); }
+            }
+        }
+    }
+}

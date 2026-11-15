@@ -2,13 +2,13 @@
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{
-    DWMWA_BORDER_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+    DWMWA_BORDER_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
     DWMWINDOWATTRIBUTE, DwmSetWindowAttribute,
 };
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GetWindowLongPtrW, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SetWindowLongPtrW, SetWindowPos, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 use windows::core::{BOOL, s, w};
 
@@ -31,6 +31,18 @@ pub fn hide_from_switcher(hwnd: HWND) {
 pub fn make_flush(hwnd: HWND) {
     set_attr(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_DONOTROUND);
     set_attr(hwnd, DWMWA_BORDER_COLOR, &0xFFFF_FFFEu32); // DWMWA_COLOR_NONE
+}
+
+/// Floating panels (the chat) get Windows 11's standard rounded corners.
+pub fn round_corners(hwnd: HWND) {
+    set_attr(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
+}
+
+/// Brings a panel the user just opened to the front with keyboard focus.
+pub fn bring_to_front(hwnd: HWND) {
+    unsafe {
+        let _ = SetForegroundWindow(hwnd);
+    }
 }
 
 pub fn set_dark_title_bar(hwnd: HWND, dark: bool) {

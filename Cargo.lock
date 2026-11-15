@@ -2439,10 +2439,11 @@ dependencies = [
 
 [[package]]
 name = "lifehud"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "quick-xml 0.42.0",
  "raw-window-handle",
+ "resvg",
  "serde",
  "serde_json",
  "slint",

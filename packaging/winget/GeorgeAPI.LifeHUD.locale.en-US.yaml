@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: GeorgeAPI.LifeHUD
+PackageVersion: 1.0.0
+PackageLocale: en-US
+Publisher: George-API
+PublisherUrl: https://github.com/George-API
+PackageName: Life HUD
+PackageUrl: https://github.com/George-API/LifeHUD
+License: MIT
+LicenseUrl: https://github.com/George-API/LifeHUD/blob/main/LICENSE
+ShortDescription: A heads-up display for Windows, docked to the edge of your screen.
+Description: Clock, weather, tasks, music, news and a few feeds in a slim bar or sidebar that windows resize around. One portable exe, no account, no telemetry.
+Tags:
+  - hud
+  - widgets
+  - desktop
+  - productivity
+  - weather
+ReleaseNotesUrl: https://github.com/George-API/LifeHUD/blob/main/CHANGELOG.md
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

@@ -1,0 +1,8 @@
+# Store text with LF line endings in the repository, whatever the editor saved.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.exe binary

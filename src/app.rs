@@ -3,23 +3,30 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use slint::{
-    ComponentHandle, Image, ModelRc, PhysicalPosition, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer, TimerMode,
-    VecModel,
+    ComponentHandle, Image, Model, ModelRc, PhysicalPosition, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer,
+    TimerMode, VecModel,
 };
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
 use crate::platform::appbar::{AppBar, DockRequest, ShellEvent};
+use crate::platform::menu::Item;
 use crate::platform::tray::{MenuState, Tray, TrayEvent};
 use crate::platform::{effects, hwnd_of, monitors, reflow, shell_open, startup};
-use crate::services::{media, news, weather};
-use crate::settings::{Appearance, Layout, Settings};
+use crate::playlists::{self, Playlist};
+use crate::services::{http, media, news, weather};
+use crate::settings::{Appearance, Layout, MAX_WIDGETS, Settings, WIDGETS, widget_name};
 use crate::tasks::TaskList;
-use crate::{DayData, HourData, HudState, HudWindow, NewsData, SettingsState, SettingsWindow, Theme};
+use crate::{
+    DayData, EditChip, EditState, HourData, HudState, HudWindow, NewsData, PlaylistRow, SettingsState, SettingsWindow,
+    Theme, WidgetTile,
+};
 use crate::{locale, storage, theme};
 
 const NOTES_FILE: &str = "notes.md";
@@ -49,12 +56,17 @@ pub struct App {
     appbar: RefCell<Option<AppBar>>,
     settings_window: RefCell<Option<SettingsWindow>>,
     tray: RefCell<Option<Tray>>,
+    /// The optional AI chat panel; costs nothing until it's opened.
+    chat: Rc<crate::chat::Chat>,
     tasks: RefCell<TaskList>,
     weather_tx: RefCell<Option<Sender<weather::Command>>>,
     media_tx: RefCell<Option<Sender<media::Command>>>,
     news_tx: RefCell<Option<Sender<(String, String)>>>,
     news_curated: RefCell<Vec<news::Article>>,
     news_top: RefCell<Vec<news::Article>>,
+    /// Bound to the UI once; rows are updated in place so the list isn't rebuilt every minute.
+    news_curated_rows: Rc<VecModel<NewsData>>,
+    news_top_rows: Rc<VecModel<NewsData>>,
     weather: RefCell<Option<(weather::Snapshot, bool)>>,
     weather_status: RefCell<String>,
     today: RefCell<String>,
@@ -62,28 +74,38 @@ pub struct App {
     clock_timer: Timer,
     save_timer: Timer,
     notes_timer: Timer,
+    /// Edit Widgets: the widget list before each change, newest last.
+    edit_undo: RefCell<Vec<Vec<String>>>,
     notes_status_timer: Timer,
     display_timer: Timer,
-    morph_timer: Timer,
+    /// The layout fold in progress, if any.
+    morph: RefCell<Option<Morph>>,
+    /// Sports, YouTube, Reddit, Netflix and Stocks.
+    pub feeds: crate::feeds::Hub,
 }
 
 impl App {
     pub fn new() -> Result<Rc<Self>, slint::PlatformError> {
         let (settings, first_run) = Settings::load();
+        let hud = HudWindow::new()?;
+        let feeds = crate::feeds::Hub::new(&hud);
         let app = Rc::new(Self {
-            hud: HudWindow::new()?,
+            hud,
             settings: RefCell::new(settings),
             first_run,
             hwnd: Cell::new(None),
             appbar: RefCell::new(None),
             settings_window: RefCell::new(None),
             tray: RefCell::new(None),
+            chat: crate::chat::Chat::new(Default::default()),
             tasks: RefCell::new(TaskList::load()),
             weather_tx: RefCell::new(None),
             media_tx: RefCell::new(None),
             news_tx: RefCell::new(None),
             news_curated: RefCell::new(Vec::new()),
             news_top: RefCell::new(Vec::new()),
+            news_curated_rows: Rc::new(VecModel::default()),
+            news_top_rows: Rc::new(VecModel::default()),
             weather: RefCell::new(None),
             weather_status: RefCell::new(String::new()),
             today: RefCell::new(today_key()),
@@ -91,21 +113,28 @@ impl App {
             clock_timer: Timer::default(),
             save_timer: Timer::default(),
             notes_timer: Timer::default(),
+            edit_undo: RefCell::new(Vec::new()),
             notes_status_timer: Timer::default(),
             display_timer: Timer::default(),
-            morph_timer: Timer::default(),
+            morph: RefCell::new(None),
+            feeds,
         });
         APP.with(|a| *a.borrow_mut() = Rc::downgrade(&app));
+        let state = app.hud.global::<HudState>();
+        state.set_news_curated(ModelRc::from(app.news_curated_rows.clone()));
+        state.set_news_top(ModelRc::from(app.news_top_rows.clone()));
         Ok(app)
     }
 
     pub fn start(self: &Rc<Self>) {
         self.apply_theme();
         self.wire_hud();
+        self.apply_ai_prefs();
         self.start_clock();
         self.load_notes();
         self.refresh_tasks();
         self.start_services();
+        self.feeds.start(&self.settings.borrow());
         self.create_tray();
 
         self.hud.global::<HudState>().set_vertical(self.settings.borrow().layout == Layout::Left);
@@ -133,6 +162,8 @@ impl App {
     }
 
     pub fn quit(&self) {
+        // A video docked into a widget is another program's window: close it, don't orphan it.
+        self.feeds.player.close();
         // Give the space back and let ordinary windows grow into it again.
         let before = self.work_areas();
         self.shutdown();
@@ -167,12 +198,23 @@ impl App {
         }
 
         state.on_open_settings(with_app!(|a: &Rc<App>| a.open_settings(None)));
+        state.on_open_chat(with_app!(|a: &Rc<App>| a.toggle_chat()));
         state.on_weather_clicked(with_app!(|a: &Rc<App>| a.open_settings(Some(3))));
         state.on_hide_hud(with_app!(|a: &Rc<App>| a.set_hud_visible(false)));
+        // Deferred out of the pointer handler, like the playlist menu.
+        state.on_open_themes(with_app!(|a: &Rc<App>| {
+            let w = Rc::downgrade(a);
+            Timer::single_shot(Duration::ZERO, move || {
+                if let Some(a) = w.upgrade() {
+                    a.show_theme_menu();
+                }
+            });
+        }));
         state.on_toggle_layout(with_app!(|a: &Rc<App>| {
             let next = if a.settings.borrow().layout == Layout::Top { Layout::Left } else { Layout::Top };
             a.set_layout(next);
         }));
+        self.wire_edit();
 
         // Tasks
         {
@@ -244,7 +286,53 @@ impl App {
         }));
         state.on_next_track(with_app!(|a: &Rc<App>| a.send_media(media::Command::Next)));
         state.on_previous_track(with_app!(|a: &Rc<App>| a.send_media(media::Command::Previous)));
+        state.on_watching_play_pause(with_app!(|a: &Rc<App>| {
+            let s = a.hud.global::<HudState>();
+            s.set_watching_playing(!s.get_watching_playing()); // optimistic; the real state follows
+            a.send_media(media::Command::WatchPlayPause);
+        }));
+        {
+            let w = w.clone();
+            state.on_watching_seek(move |fraction| {
+                let Some(a) = w.upgrade() else { return };
+                let fraction = fraction.clamp(0.0, 1.0);
+                a.hud.global::<HudState>().set_watching_progress(fraction);
+                a.send_media(media::Command::WatchSeek(fraction));
+            });
+        }
+        state.on_watching_open(with_app!(|a: &Rc<App>| {
+            let s = a.hud.global::<HudState>();
+            let (site, title) = (s.get_watching_site(), s.get_watching_title());
+            // The tab showing it: its window title carries the video title (YouTube) or "Netflix".
+            let windows = crate::platform::browsers::windows();
+            let target = windows
+                .iter()
+                .find(|w| !title.is_empty() && w.title.contains(title.as_str()))
+                .or_else(|| windows.iter().find(|w| site == "netflix" && w.title.contains("Netflix")));
+            if let Some(w) = target {
+                crate::platform::browsers::activate(w.hwnd);
+            }
+        }));
+        {
+            let w = w.clone();
+            state.on_seek(move |fraction| {
+                let Some(a) = w.upgrade() else { return };
+                let fraction = fraction.clamp(0.0, 1.0);
+                // Optimistic: move the bar now; the player's real position follows on the next poll.
+                a.hud.global::<HudState>().set_media_progress(fraction);
+                a.send_media(media::Command::Seek(fraction));
+            });
+        }
         state.on_open_spotify(open_spotify);
+        // Deferred out of the pointer handler, so the menu window opens after this click is done.
+        state.on_show_playlists(with_app!(|a: &Rc<App>| {
+            let w = Rc::downgrade(a);
+            Timer::single_shot(Duration::ZERO, move || {
+                if let Some(a) = w.upgrade() {
+                    a.show_playlist_menu();
+                }
+            });
+        }));
 
         // News: only ever hand web links to the shell.
         state.on_open_article(|url| {
@@ -275,6 +363,8 @@ impl App {
                     TrayEvent::TopLayout => a.set_layout(Layout::Top),
                     TrayEvent::SidebarLayout => a.set_layout(Layout::Left),
                     TrayEvent::Settings => a.open_settings(None),
+                    TrayEvent::Chat => a.toggle_chat(),
+                    TrayEvent::EditWidgets => a.set_editing(true),
                     TrayEvent::Quit => a.quit(),
                 }
             },
@@ -444,6 +534,7 @@ impl App {
     pub fn set_hud_visible(self: &Rc<Self>, visible: bool) {
         self.settings.borrow_mut().hud_visible = visible;
         self.schedule_save();
+        self.send_media(media::Command::Visible(visible));
         if visible {
             self.show_hud();
         } else {
@@ -457,30 +548,39 @@ impl App {
         if let Some(sw) = self.settings_window.borrow().as_ref() {
             sw.global::<SettingsState>().set_hud_visible(visible);
         }
+        self.feeds.apply_layout(&self.settings.borrow());
     }
 
     pub fn set_layout(self: &Rc<Self>, layout: Layout) {
-        if self.settings.borrow().layout == layout || self.morph_timer.running() {
+        if self.settings.borrow().layout == layout || self.morph.borrow().is_some() {
+            // Ignored mid-animation: put the Settings tiles back in line with the HUD.
+            if let Some(sw) = self.settings_window.borrow().as_ref() {
+                self.populate_layout(&sw.global::<SettingsState>());
+            }
             return;
         }
         let animate = self.settings.borrow().hud_visible && self.hwnd.get().is_some();
         if !animate {
             self.commit_layout(layout);
+            self.show_layout();
             self.redock();
             return;
         }
 
-        // 1) Fade the widgets out. 2) Fold the glass from one edge to the other.
-        // 3) Claim the new edge and fade the widgets back in.
+        // 1) Fade the widgets out. 2) Fold the glass from one edge to the other in one motion.
+        // 3) Claim the new edge and fade the widgets back in. The fold starts just after the 80 ms
+        //    fade, once the widgets are out of the frame, so every fold frame is cheap to draw.
         self.hud.global::<HudState>().set_transitioning(true);
         let w = Rc::downgrade(self);
-        Timer::single_shot(Duration::from_millis(190), move || {
+        Timer::single_shot(Duration::from_millis(90), move || {
             let Some(a) = w.upgrade() else { return };
             let Some(hwnd) = a.hwnd.get() else { return };
             let mut from = RECT::default();
             unsafe {
                 let _ = GetWindowRect(hwnd, &mut from);
             }
+            // The widgets switch layout when the glass lands (finish_morph), not here: building the
+            // new layout on the fold's first frame would cost a dropped frame.
             a.commit_layout(layout);
             let Some(req) = a.dock_request() else {
                 a.finish_morph();
@@ -491,74 +591,97 @@ impl App {
                 Layout::Top => RECT { left: wa.left, top: mb.top, right: wa.right, bottom: mb.top + t },
                 Layout::Left => RECT { left: mb.left, top: wa.top, right: mb.left + t, bottom: wa.bottom },
             };
-            // The corner where the bar folds: keep one dimension, take the other from the target.
-            let corner = match layout {
-                Layout::Left => RECT {
-                    left: from.left,
-                    top: from.top,
-                    right: from.left + (target.right - target.left),
-                    bottom: from.bottom,
-                },
-                Layout::Top => RECT {
-                    left: from.left,
-                    top: from.top,
-                    right: from.right,
-                    bottom: from.top + (target.bottom - target.top),
-                },
-            };
-            a.run_morph(vec![(from, corner, 170.0), (corner, target, 230.0)]);
+            // The long side collapses first; the other grows in as it finishes.
+            a.run_morph(from, target, layout == Layout::Left);
         });
     }
 
+    /// Records the new layout. The HUD's widgets follow in [`Self::show_layout`].
     fn commit_layout(&self, layout: Layout) {
         self.settings.borrow_mut().layout = layout;
-        self.hud.global::<HudState>().set_vertical(layout == Layout::Left);
         self.schedule_save();
         if let Some(sw) = self.settings_window.borrow().as_ref() {
             self.populate_layout(&sw.global::<SettingsState>());
         }
     }
 
-    fn run_morph(self: &Rc<Self>, phases: Vec<(RECT, RECT, f32)>) {
-        let start = std::time::Instant::now();
-        let total: f32 = phases.iter().map(|p| p.2).sum();
-        let w = Rc::downgrade(self);
-        self.morph_timer.start(TimerMode::Repeated, Duration::from_millis(12), move || {
-            let Some(a) = w.upgrade() else { return };
-            let mut t = start.elapsed().as_secs_f32() * 1000.0;
-            if t >= total {
-                a.morph_timer.stop();
-                a.finish_morph();
-                return;
-            }
-            for (from, to, dur) in &phases {
-                if t <= *dur {
-                    let k = ease_in_out(t / dur);
-                    let lerp = |x: i32, y: i32| x + ((y - x) as f32 * k).round() as i32;
-                    let rc = RECT {
-                        left: lerp(from.left, to.left),
-                        top: lerp(from.top, to.top),
-                        right: lerp(from.right, to.right),
-                        bottom: lerp(from.bottom, to.bottom),
-                    };
-                    if let Some(appbar) = a.appbar.borrow().as_ref() {
-                        appbar.move_freely(rc);
-                    }
-                    return;
+    /// Lays the widgets out for the current layout.
+    fn show_layout(&self) {
+        self.hud.global::<HudState>().set_vertical(self.settings.borrow().layout == Layout::Left);
+        self.feeds.apply_layout(&self.settings.borrow());
+    }
+
+    /// Folds the window from `from` to `to`, one step per display refresh. A small thread waits on
+    /// the compositor's vblank and asks the UI thread for the next frame; position comes from elapsed
+    /// time, so a late frame catches up instead of slowing the animation down.
+    fn run_morph(self: &Rc<Self>, from: RECT, to: RECT, lead_horizontal: bool) {
+        let stop = Arc::new(AtomicBool::new(false));
+        *self.morph.borrow_mut() = Some(Morph {
+            start: Instant::now(),
+            from,
+            to,
+            lead_horizontal,
+            stop: stop.clone(),
+            frames: 0,
+            last: Instant::now(),
+            worst_gap_ms: 0.0,
+        });
+        self.morph_frame();
+
+        let pending = Arc::new(AtomicBool::new(false));
+        let spawned = std::thread::Builder::new().name("morph-vsync".into()).spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                monitors::wait_for_vblank();
+                // At most one frame queued: a slow UI thread is never flooded.
+                if !pending.swap(true, Ordering::AcqRel) {
+                    let pending = pending.clone();
+                    post(move |a| {
+                        pending.store(false, Ordering::Release);
+                        a.morph_frame();
+                    });
                 }
-                t -= dur;
             }
         });
+        if spawned.is_err() {
+            // No pacing thread: jump straight to the end rather than freeze mid-fold.
+            if let Some(m) = self.morph.borrow_mut().as_mut() {
+                m.start -= Duration::from_secs(1);
+            }
+            self.morph_frame();
+        }
+    }
+
+    fn morph_frame(self: &Rc<Self>) {
+        let (rc, done) = {
+            let mut morph = self.morph.borrow_mut();
+            let Some(m) = morph.as_mut() else { return };
+            m.frames += 1;
+            m.worst_gap_ms = m.worst_gap_ms.max(m.last.elapsed().as_secs_f32() * 1000.0);
+            m.last = Instant::now();
+            let u = m.start.elapsed().as_secs_f32() * 1000.0 / MORPH_MS;
+            (morph_rect(m.from, m.to, m.lead_horizontal, u), u >= 1.0)
+        };
+        if let Some(appbar) = self.appbar.borrow().as_ref() {
+            appbar.move_freely(rc);
+        }
+        if done && let Some(m) = self.morph.borrow_mut().take() {
+            m.stop.store(true, Ordering::Relaxed);
+            let ms = m.start.elapsed().as_secs_f32() * 1000.0;
+            storage::log(format!(
+                "layout fold: {} frames in {ms:.0} ms ({:.0} fps, worst gap {:.1} ms)",
+                m.frames,
+                m.frames as f32 * 1000.0 / ms,
+                m.worst_gap_ms
+            ));
+            self.finish_morph();
+        }
     }
 
     fn finish_morph(self: &Rc<Self>) {
+        // The glass has landed at its final size: lay the widgets out for it, then bring them back.
+        self.show_layout();
         self.redock();
-        let w = Rc::downgrade(self);
-        Timer::single_shot(Duration::from_millis(80), move || {
-            if let Some(a) = w.upgrade() {
-                a.hud.global::<HudState>().set_transitioning(false);
-            }
-        });
+        self.hud.global::<HudState>().set_transitioning(false);
     }
 
     // ------------------------------------------------------------------ theme
@@ -571,6 +694,7 @@ impl App {
         let palette = theme::resolve(&id, appearance);
         theme::apply(&self.hud.global::<Theme>(), &palette);
         self.apply_backdrop();
+        self.chat.apply_theme(&palette);
         if let Some(sw) = self.settings_window.borrow().as_ref() {
             theme::apply(&sw.global::<Theme>(), &palette);
             sw.global::<SettingsState>().set_themes(theme::swatches(&id, appearance));
@@ -646,6 +770,7 @@ impl App {
         }
         if now.wSecond == 0 {
             self.render_news(); // keep "12m" ages honest
+            self.feeds.minute(&self.settings.borrow());
         }
     }
 
@@ -738,9 +863,13 @@ impl App {
         *self.news_tx.borrow_mut() = Some(tx);
 
         let prefer = self.settings.borrow().prefer_spotify;
+        crate::volume::attach(&self.hud);
         let tx = media::spawn(prefer, |update| {
             post(move |app| app.on_media(update));
         });
+        if !self.settings.borrow().hud_visible {
+            let _ = tx.send(media::Command::Visible(false)); // started hidden (e.g. from the tray)
+        }
         *self.media_tx.borrow_mut() = Some(tx);
     }
 
@@ -842,9 +971,12 @@ impl App {
             })
             .collect();
 
-        state.set_upcoming(ModelRc::new(VecModel::from(daily.iter().skip(1).take(3).cloned().collect::<Vec<_>>())));
-        state.set_daily(ModelRc::new(VecModel::from(daily)));
-        state.set_hourly(ModelRc::new(VecModel::from(hours)));
+        // Update the rows in place: a refresh that changes one temperature redraws one cell, not
+        // the whole forecast.
+        let upcoming = daily.iter().skip(1).take(3).cloned().collect::<Vec<_>>();
+        sync_model(state.get_upcoming(), |m| state.set_upcoming(m), upcoming);
+        sync_model(state.get_daily(), |m| state.set_daily(m), daily);
+        sync_model(state.get_hourly(), |m| state.set_hourly(m), hours);
         state.set_weather_ready(true);
     }
 
@@ -875,22 +1007,12 @@ impl App {
             state.set_top_name(news::find(news::Feed::Top, &s.news_top).name.into());
         }
         let now = weather::unix_now();
-        let rows = |list: &[news::Article]| -> ModelRc<NewsData> {
-            let rows: Vec<NewsData> = list
-                .iter()
-                .map(|a| NewsData {
-                    title: a.title.as_str().into(),
-                    age: news::age_label(a.published, now).into(),
-                    publisher: a.publisher.as_deref().unwrap_or("").into(),
-                    url: a.url.as_str().into(),
-                })
-                .collect();
-            ModelRc::new(VecModel::from(rows))
-        };
-        state.set_news_curated(rows(&self.news_curated.borrow()));
-        state.set_news_top(rows(&self.news_top.borrow()));
+        sync_news_rows(&self.news_curated_rows, &self.news_curated.borrow(), now);
+        sync_news_rows(&self.news_top_rows, &self.news_top.borrow(), now);
     }
+
     fn on_media(&self, u: media::Update) {
+        crate::volume::source(&u.source_app);
         let state = self.hud.global::<HudState>();
         match &u.track {
             Some(t) => {
@@ -915,6 +1037,7 @@ impl App {
         state.set_is_playing(u.track.is_some() && u.playing);
         state.set_can_previous(u.can_previous);
         state.set_can_next(u.can_next);
+        state.set_can_seek(u.track.is_some() && u.can_seek && u.duration_ms > 1000);
         state.set_has_timeline(u.track.is_some() && u.duration_ms > 1000);
         if u.duration_ms > 0 {
             state.set_media_progress(u.position_ms as f32 / u.duration_ms as f32);
@@ -938,6 +1061,124 @@ impl App {
                 });
             }
         }
+        self.show_watching(u.watching.as_ref(), u.watch_thumb);
+    }
+
+    /// "Now watching" for the YouTube and Netflix widgets.
+    fn show_watching(&self, w: Option<&media::Watching>, thumb: media::ThumbChange) {
+        let state = self.hud.global::<HudState>();
+        state.set_watching(w.is_some());
+        if let Some(w) = w {
+            state.set_watching_site(if w.site == media::Site::YouTube { "youtube" } else { "netflix" }.into());
+            state.set_watching_title(w.title.as_str().into());
+            state.set_watching_subtitle(w.subtitle.as_str().into());
+            state.set_watching_browser(w.browser.to_uppercase().into());
+            state.set_watching_playing(w.playing);
+            state.set_watching_can_seek(w.can_seek && w.duration_ms > 1000);
+            state.set_watching_progress(if w.duration_ms > 0 {
+                w.position_ms as f32 / w.duration_ms as f32
+            } else {
+                0.0
+            });
+        }
+        match thumb {
+            media::ThumbChange::Keep => {}
+            media::ThumbChange::Clear => {
+                state.set_watching_has_art(false);
+                state.set_watching_art(Image::default());
+            }
+            media::ThumbChange::Set(t) => {
+                let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&t.rgba, t.width, t.height);
+                state.set_watching_art(Image::from_rgba8(buffer));
+                state.set_watching_has_art(true);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ AI chat
+
+    fn toggle_chat(self: &Rc<Self>) {
+        if self.chat.is_open() {
+            self.settings.borrow_mut().ai.tab = self.chat.tab();
+            self.schedule_save();
+            self.chat.close();
+            return;
+        }
+        let (palette, top_layout, tab) = {
+            let s = self.settings.borrow();
+            (theme::resolve(&s.theme, s.appearance), s.layout == Layout::Top, s.ai.tab)
+        };
+        let hud = self.settings.borrow().hud_visible.then(|| self.hwnd.get()).flatten().map(|hwnd| {
+            let mut r = RECT::default();
+            unsafe {
+                let _ = GetWindowRect(hwnd, &mut r);
+            }
+            r
+        });
+        self.chat.open(&palette, crate::chat::Anchor { hud, top_layout }, Some(tab));
+    }
+
+    /// Pushes the AI preferences to the HUD (button) and the chat panel (models).
+    fn apply_ai_prefs(&self) {
+        let ai = self.settings.borrow().ai.clone();
+        self.hud.global::<HudState>().set_ai_button(ai.show_button);
+        self.chat.set_models(ai.models);
+    }
+
+    fn wire_ai_settings(self: &Rc<Self>, st: &SettingsState) {
+        st.set_ai_button(self.settings.borrow().ai.show_button);
+        st.set_ai_providers(crate::chat::provider_rows(&self.settings.borrow().ai.models));
+        // A message under one provider's group (empty clears it). Doesn't rebuild the rows, so a
+        // field being typed in keeps its focus.
+        let show_error = |a: &App, index: usize, error: &str| {
+            if let Some(sw) = a.settings_window.borrow().as_ref() {
+                let st = sw.global::<SettingsState>();
+                let mut errors: Vec<SharedString> = st.get_ai_errors().iter().collect();
+                errors.resize(3, SharedString::new());
+                errors[index.min(2)] = error.into();
+                st.set_ai_errors(ModelRc::new(VecModel::from(errors)));
+            }
+        };
+        let refresh = move |a: &App, index: usize, error: String| {
+            if let Some(sw) = a.settings_window.borrow().as_ref() {
+                sw.global::<SettingsState>()
+                    .set_ai_providers(crate::chat::provider_rows(&a.settings.borrow().ai.models));
+            }
+            show_error(a, index, &error);
+            a.chat.refresh_keys();
+        };
+        let w = Rc::downgrade(self);
+        st.on_ai_save_key(move |i, key| {
+            let Some(a) = w.upgrade() else { return };
+            let i = (i.max(0) as usize).min(2);
+            let error = crate::chat::save_key(i, &key).err().unwrap_or_default();
+            refresh(&a, i, error);
+        });
+        let w = Rc::downgrade(self);
+        st.on_ai_remove_key(move |i| {
+            let Some(a) = w.upgrade() else { return };
+            let i = (i.max(0) as usize).min(2);
+            crate::chat::remove_key(i);
+            refresh(&a, i, String::new());
+        });
+        let w = Rc::downgrade(self);
+        st.on_ai_set_model(move |i, model| {
+            let Some(a) = w.upgrade() else { return };
+            let i = (i.max(0) as usize).min(2);
+            let model = match crate::chat::clean_model(i, &model) {
+                Ok(m) => {
+                    show_error(&a, i, "");
+                    m
+                }
+                Err(message) => return show_error(&a, i, &message),
+            };
+            if a.settings.borrow().ai.models[i] != model {
+                a.settings.borrow_mut().ai.models[i] = model;
+                a.apply_ai_prefs();
+                a.schedule_save();
+            }
+        });
+        st.on_ai_get_key(|i| crate::chat::open_keys_page(i.max(0) as usize));
     }
 
     // ------------------------------------------------------------------ settings window
@@ -995,6 +1236,7 @@ impl App {
         st.set_weather_status(self.weather_status.borrow().as_str().into());
         st.set_units(if s.celsius { 0 } else { 1 });
         st.set_prefer_spotify(s.prefer_spotify);
+        st.set_playlists(playlist_rows(&s.playlists));
         let names = |feed| -> ModelRc<SharedString> {
             ModelRc::new(VecModel::from(
                 news::sources(feed).iter().map(|n| SharedString::from(n.name)).collect::<Vec<_>>(),
@@ -1005,6 +1247,9 @@ impl App {
         st.set_curated_index(news::CURATED.iter().position(|n| n.id == s.news_curated).unwrap_or(0) as i32);
         st.set_top_index(news::TOP.iter().position(|n| n.id == s.news_top).unwrap_or(0) as i32);
         st.set_version(env!("CARGO_PKG_VERSION").into());
+        crate::feeds::settings::wire(&sw);
+        crate::feeds::settings::populate(&sw, &s);
+        self.wire_ai_settings(&st);
 
         let w = Rc::downgrade(self);
         st.on_changed(move |key| {
@@ -1014,32 +1259,61 @@ impl App {
         });
         let w = Rc::downgrade(self);
         st.on_select_theme(move |id| {
-            let Some(a) = w.upgrade() else { return };
-            a.settings.borrow_mut().theme = id.to_string();
-            a.schedule_save();
-            a.apply_theme();
-            if let Some(sw) = a.settings_window.borrow().as_ref() {
-                sw.global::<SettingsState>().set_appearance_enabled(id == theme::CLASSIC);
+            if let Some(a) = w.upgrade() {
+                a.set_theme(&id);
             }
         });
         let w = Rc::downgrade(self);
-        st.on_move_card(move |index, delta| {
+        st.on_reset_layout(move || {
             let Some(a) = w.upgrade() else { return };
-            a.settings.borrow_mut().move_card(index.max(0) as usize, delta);
-            a.apply_sidebar_order();
-            if let Some(sw) = a.settings_window.borrow().as_ref() {
-                sw.global::<SettingsState>().set_sidebar_names(a.sidebar_names());
+            let before = a.work_areas();
+            // Re-places cards and slots, reconfigures widgets, refreshes their settings and saves.
+            a.update_settings(Settings::reset_layout);
+            if let Some(sw) = a.settings_window() {
+                a.populate_layout(&sw.global::<SettingsState>());
             }
-            a.schedule_save();
+            // The default size may differ from the current one.
+            a.reposition();
+            a.reflow_after(before);
+        });
+        let w = Rc::downgrade(self);
+        st.on_add_playlist(move |text| {
+            if let Some(a) = w.upgrade() {
+                a.add_playlist(&text);
+            }
+        });
+        let w = Rc::downgrade(self);
+        st.on_toggle_pin(move |uri| {
+            let Some(a) = w.upgrade() else { return };
+            if let Some(p) = a.settings.borrow_mut().playlists.iter_mut().find(|p| p.uri == uri.as_str()) {
+                p.pinned = !p.pinned;
+            }
+            a.playlists_changed();
+        });
+        let w = Rc::downgrade(self);
+        st.on_remove_playlist(move |uri| {
+            let Some(a) = w.upgrade() else { return };
+            a.settings.borrow_mut().playlists.retain(|p| p.uri != uri.as_str());
+            a.playlists_changed();
         });
         st.on_open_data_folder(|| {
             shell_open(&storage::data_dir().to_string_lossy());
+        });
+        // About page links: only ever the project's own pages.
+        st.on_open_link(|url| {
+            if url.starts_with("https://github.com/George-API/LifeHUD") {
+                shell_open(&url);
+            }
         });
 
         // Closing frees the window entirely; it's rebuilt on demand.
         let w = Rc::downgrade(self);
         sw.window().on_close_requested(move || {
             if let Some(a) = w.upgrade() {
+                let typed = a.settings_window.borrow().as_ref().map(|sw| sw.global::<SettingsState>().get_city());
+                if typed.is_some_and(|c| c.trim() != a.settings.borrow().weather_city) {
+                    a.on_settings_changed("weather");
+                }
                 let w = Rc::downgrade(&a);
                 Timer::single_shot(Duration::ZERO, move || {
                     if let Some(a) = w.upgrade() {
@@ -1066,25 +1340,277 @@ impl App {
         });
     }
 
+    // ------------------------------------------------------------------ playlists
+
+    /// Switches theme, from Settings or the HUD's quick menu alike.
+    fn set_theme(&self, id: &str) {
+        self.settings.borrow_mut().theme = id.to_string();
+        self.schedule_save();
+        self.apply_theme();
+        if let Some(sw) = self.settings_window.borrow().as_ref() {
+            sw.global::<SettingsState>().set_appearance_enabled(id == theme::CLASSIC);
+        }
+    }
+
+    /// The paintbrush's quick-swap menu: every theme with a colour preview, the current one ticked.
+    fn show_theme_menu(self: &Rc<Self>) {
+        if crate::context_menu::is_open() {
+            return;
+        }
+        let (current, appearance) = {
+            let s = self.settings.borrow();
+            (s.theme.clone(), s.appearance)
+        };
+        let to_u32 = |c: slint::Color| u32::from_be_bytes([c.alpha(), c.red(), c.green(), c.blue()]);
+        let (mut signature, mut moods) = (vec![Item::Header("Signature".into())], vec![]);
+        for (i, entry) in theme::PALETTES.iter().enumerate() {
+            let p = theme::resolve(entry.id, appearance);
+            let item = Item::Swatch {
+                id: i,
+                text: p.name.into(),
+                checked: p.id.eq_ignore_ascii_case(&current),
+                surface: p.tint | 0xFF00_0000,
+                accent: to_u32(theme::accent(&p)),
+            };
+            if p.stickers > 0 { moods.push(item) } else { signature.push(item) }
+        }
+        if !moods.is_empty() {
+            signature.push(Item::Separator);
+            signature.push(Item::Header("Mood".into()));
+            signature.extend(moods);
+        }
+        let palette = theme::resolve(&current, appearance);
+        let w = Rc::downgrade(self);
+        crate::context_menu::show(&palette, signature, move |i| {
+            if let (Some(a), Some(p)) = (w.upgrade(), theme::PALETTES.get(i)) {
+                a.set_theme(p.id);
+            }
+        });
+    }
+
+    /// The music card's right-click menu: pinned first, then the rest, then Spotify shortcuts.
+    fn show_playlist_menu(self: &Rc<Self>) {
+        const LIKED: usize = 1;
+        const LIBRARY: usize = 2;
+        const MANAGE: usize = 3;
+        const FIRST: usize = 100;
+        let list = self.settings.borrow().playlists.clone();
+        let ordered = playlists::ordered(&list);
+
+        let mut items = Vec::new();
+        let pinned = ordered.iter().take_while(|p| p.pinned).count();
+        for (i, p) in ordered.iter().enumerate() {
+            if i == 0 && pinned > 0 {
+                items.push(Item::Header("Pinned".into()));
+            }
+            if i == pinned {
+                if pinned > 0 {
+                    items.push(Item::Separator);
+                }
+                items.push(Item::Header("Playlists".into()));
+            }
+            items.push(Item::Entry { id: FIRST + i, text: p.name.clone(), checked: false });
+        }
+        if !ordered.is_empty() {
+            items.push(Item::Separator);
+        }
+        items.push(Item::Entry { id: LIKED, text: "Liked Songs".into(), checked: false });
+        items.push(Item::Entry { id: LIBRARY, text: "Your Library".into(), checked: false });
+        items.push(Item::Separator);
+        let manage = if ordered.is_empty() { "Add Playlists…" } else { "Manage Playlists…" };
+        items.push(Item::Entry { id: MANAGE, text: manage.into(), checked: false });
+
+        // Only canonical URIs from the saved list are ever opened (see playlists::normalize).
+        let uris: Vec<String> = ordered.iter().map(|p| p.uri.clone()).collect();
+        let palette = {
+            let s = self.settings.borrow();
+            theme::resolve(&s.theme, s.appearance)
+        };
+        let w = Rc::downgrade(self);
+        crate::context_menu::show(&palette, items, move |choice| match choice {
+            LIKED => open_in_spotify("spotify:collection:tracks", "https://open.spotify.com/collection/tracks"),
+            LIBRARY => open_in_spotify("spotify:collection", "https://open.spotify.com/collection/playlists"),
+            MANAGE => {
+                if let Some(a) = w.upgrade() {
+                    a.open_settings(Some(4));
+                }
+            }
+            id if id >= FIRST => {
+                if let Some(uri) = uris.get(id - FIRST) {
+                    open_in_spotify(uri, &playlists::web_url(uri));
+                }
+            }
+            _ => {}
+        });
+    }
+
+    fn add_playlist(&self, text: &str) {
+        let error = match playlists::parse_link(text) {
+            None => Some("That doesn't look like a Spotify playlist, album, artist or podcast link."),
+            Some(uri) => {
+                let mut s = self.settings.borrow_mut();
+                if s.playlists.iter().any(|p| p.uri == uri) {
+                    Some("That one is already saved.")
+                } else if s.playlists.len() >= playlists::MAX {
+                    Some("You've reached the limit. Remove one to add another.")
+                } else {
+                    s.playlists.push(Playlist {
+                        name: playlists::placeholder_name(&uri),
+                        uri: uri.clone(),
+                        pinned: false,
+                    });
+                    fetch_playlist_title(uri);
+                    None
+                }
+            }
+        };
+        if let Some(sw) = self.settings_window.borrow().as_ref() {
+            let st = sw.global::<SettingsState>();
+            st.set_playlist_error(error.unwrap_or("").into());
+            if error.is_none() {
+                st.set_playlist_link(SharedString::new());
+            }
+        }
+        if error.is_none() {
+            self.playlists_changed();
+        }
+    }
+
+    /// Fills in the real title once Spotify's public oEmbed endpoint answers.
+    fn set_playlist_title(&self, uri: &str, title: String) {
+        if let Some(p) = self.settings.borrow_mut().playlists.iter_mut().find(|p| p.uri == uri) {
+            p.name = title;
+        }
+        self.playlists_changed();
+    }
+
+    fn playlists_changed(&self) {
+        if let Some(sw) = self.settings_window.borrow().as_ref() {
+            sw.global::<SettingsState>().set_playlists(playlist_rows(&self.settings.borrow().playlists));
+        }
+        self.schedule_save();
+    }
+
     fn apply_sidebar_order(&self) {
         let kinds = self.settings.borrow().sidebar_kinds();
         self.hud.global::<HudState>().set_sidebar_order(ModelRc::new(VecModel::from(kinds)));
+        self.feeds.apply_layout(&self.settings.borrow());
+        self.refresh_edit();
     }
 
-    fn sidebar_names(&self) -> ModelRc<SharedString> {
+    // ------------------------------------------------------------------ Edit Widgets
+
+    /// Connects Edit Widgets mode (ui/edit.slint). Every change goes through `update_settings`, so the
+    /// HUD, an open Settings window and the saved file stay in step.
+    fn wire_edit(self: &Rc<Self>) {
+        let es = self.hud.global::<EditState>();
+        let ids: Vec<SharedString> = WIDGETS.iter().map(|(id, _)| SharedString::from(*id)).collect();
+        let names: Vec<SharedString> = WIDGETS.iter().map(|(_, name)| SharedString::from(*name)).collect();
+        es.set_ids(ModelRc::new(VecModel::from(ids)));
+        es.set_names(ModelRc::new(VecModel::from(names)));
+        es.set_capacity(MAX_WIDGETS as i32);
+
+        macro_rules! on {
+            ($setter:ident, |$a:ident $(, $arg:ident)*| $body:expr) => {{
+                let w = Rc::downgrade(self);
+                es.$setter(move |$($arg),*| {
+                    if let Some($a) = w.upgrade() {
+                        $body;
+                    }
+                });
+            }};
+        }
+        on!(on_begin, |a| a.set_editing(true));
+        on!(on_done, |a| a.set_editing(false));
+        on!(on_place, |a, from, to| a.edit_change(|s| s.place_card(from.max(0) as usize, to.max(0) as usize)));
+        on!(on_insert, |a, id, at| a.edit_change(|s| s.insert_card(&id, at.max(0) as usize)));
+        on!(on_replace, |a, index, id| a.edit_change(|s| s.replace_card(index.max(0) as usize, &id)));
+        on!(on_remove, |a, index| a.edit_change(|s| s.remove_card(index.max(0) as usize)));
+        on!(on_nudge, |a, index, delta| a.edit_change(|s| s.move_card(index.max(0) as usize, delta.signum())));
+        on!(on_undo, |a| a.edit_undo());
+    }
+
+    /// Enters or leaves Edit Widgets mode. Entering shows the HUD if it was hidden.
+    pub fn set_editing(self: &Rc<Self>, on: bool) {
+        if on && !self.settings.borrow().hud_visible {
+            self.set_hud_visible(true);
+        }
+        // Each editing session starts with a clean history.
+        self.edit_undo.borrow_mut().clear();
+        self.refresh_edit();
+        self.hud.global::<EditState>().set_editing(on);
+    }
+
+    /// Applies one edit and remembers the list as it was, for Undo.
+    fn edit_change(&self, f: impl FnOnce(&mut Settings)) {
+        const HISTORY: usize = 50;
+        let before = self.settings.borrow().sidebar_order.clone();
+        self.update_settings(f);
+        if self.settings.borrow().sidebar_order != before {
+            let mut undo = self.edit_undo.borrow_mut();
+            undo.push(before);
+            let extra = undo.len().saturating_sub(HISTORY);
+            undo.drain(..extra);
+        }
+        self.refresh_edit();
+    }
+
+    fn edit_undo(&self) {
+        let previous = self.edit_undo.borrow_mut().pop();
+        if let Some(order) = previous {
+            self.update_settings(|s| s.sidebar_order = order);
+        }
+        self.refresh_edit();
+    }
+
+    /// What the tray offers and how full the HUD is.
+    fn refresh_edit(&self) {
+        let es = self.hud.global::<EditState>();
         let s = self.settings.borrow();
-        let names: Vec<SharedString> = s
-            .sidebar_order
-            .iter()
-            .filter_map(|id| {
-                crate::settings::SIDEBAR_CARDS.iter().find(|(c, _)| c == id).map(|(_, n)| SharedString::from(*n))
-            })
+        let extras: Vec<EditChip> = s
+            .sidebar_available()
+            .into_iter()
+            .map(|id| EditChip { id: id.into(), name: widget_name(id).into() })
             .collect();
-        ModelRc::new(VecModel::from(names))
+        es.set_extras(ModelRc::new(VecModel::from(extras)));
+        es.set_full(s.hud_full());
+        es.set_count(s.hud_widgets().len() as i32);
+        es.set_can_undo(!self.edit_undo.borrow().is_empty());
+    }
+
+    // ------------------------------------------------------------------ feed widgets (src/feeds)
+
+    pub fn settings(&self) -> std::cell::Ref<'_, Settings> {
+        self.settings.borrow()
+    }
+
+    pub fn settings_window(&self) -> Option<SettingsWindow> {
+        self.settings_window.borrow().as_ref().map(|sw| sw.clone_strong())
+    }
+
+    /// Applies a change made on a widget settings page: re-places cards, reconfigures the widgets,
+    /// refreshes the open Settings window and saves.
+    pub fn update_settings(&self, f: impl FnOnce(&mut Settings)) {
+        {
+            let mut s = self.settings.borrow_mut();
+            f(&mut s);
+            s.normalize();
+        }
+        self.apply_sidebar_order();
+        self.feeds.configure(&self.settings.borrow());
+        if let Some(sw) = self.settings_window() {
+            crate::feeds::settings::populate(&sw, &self.settings.borrow());
+            self.populate_widget_tiles(&sw.global::<SettingsState>());
+        }
+        self.schedule_save();
+    }
+
+    fn populate_widget_tiles(&self, st: &SettingsState) {
+        st.set_widget_tiles(widget_tiles(&self.settings.borrow()));
     }
 
     fn populate_layout(&self, st: &SettingsState) {
-        st.set_sidebar_names(self.sidebar_names());
+        self.populate_widget_tiles(st);
         let s = self.settings.borrow();
         let (lo, hi) = s.size_range();
         st.set_top_layout(s.layout == Layout::Top);
@@ -1180,15 +1706,129 @@ impl App {
                 self.settings.borrow_mut().prefer_spotify = v;
                 self.send_media(media::Command::PreferSpotify(v));
             }
+            "ai" => {
+                self.settings.borrow_mut().ai.show_button = st.get_ai_button();
+                self.apply_ai_prefs();
+            }
             _ => {}
         }
         self.schedule_save();
     }
 }
 
-fn ease_in_out(t: f32) -> f32 {
+/// The Widgets overview (Settings page 30): every widget with its blurb and where it's placed.
+pub fn widget_tiles(s: &Settings) -> ModelRc<WidgetTile> {
+    let tiles: Vec<WidgetTile> = crate::settings::WIDGETS
+        .iter()
+        .map(|(id, name)| {
+            let (placement, shown) = widget_placement(s, id);
+            WidgetTile {
+                id: (*id).into(),
+                name: (*name).into(),
+                detail: crate::feeds::settings::blurb(id).into(),
+                page: widget_page(id),
+                placement: placement.into(),
+                shown,
+            }
+        })
+        .collect();
+    ModelRc::new(VecModel::from(tiles))
+}
+
+/// The Settings page for a widget (see `ui/settings.slint`), or -1 when it has none.
+fn widget_page(id: &str) -> i32 {
+    match id {
+        "weather" => 3,
+        "music" => 4,
+        "news" => 5,
+        "sports" => 7,
+        "youtube" => 8,
+        "reddit" => 9,
+        "netflix" => 10,
+        "stocks" => 11,
+        _ => -1,
+    }
+}
+
+/// Whether a widget is on the HUD, for its badge on the Widgets overview. Both layouts show the same
+/// list, so there's one answer. Read from the arrangement (not what's on screen right now), so a hidden
+/// HUD still shows what's placed.
+fn widget_placement(s: &Settings, id: &str) -> (&'static str, bool) {
+    if s.sidebar_order.iter().any(|w| w == id) { ("On HUD", true) } else { ("Not shown", false) }
+}
+
+/// Brings a headline model up to date. New articles replace the list; otherwise only rows whose
+/// age label changed ("12m" → "13m") are touched, so unchanged rows aren't rebuilt or redrawn.
+/// Diffs `rows` into `current` when it is already a `VecModel`; otherwise installs a new one.
+fn sync_model<T: Clone + PartialEq + 'static>(current: ModelRc<T>, set: impl FnOnce(ModelRc<T>), rows: Vec<T>) {
+    match current.as_any().downcast_ref::<VecModel<T>>() {
+        Some(model) => crate::feeds::sync(model, rows),
+        None => set(ModelRc::new(VecModel::from(rows))),
+    }
+}
+
+fn sync_news_rows(model: &VecModel<NewsData>, articles: &[news::Article], now: i64) {
+    let row = |a: &news::Article| NewsData {
+        title: a.title.as_str().into(),
+        age: news::age_label(a.published, now).into(),
+        publisher: a.publisher.as_deref().unwrap_or("").into(),
+        url: a.url.as_str().into(),
+    };
+    let same_articles = model.row_count() == articles.len()
+        && articles.iter().enumerate().all(|(i, a)| model.row_data(i).is_some_and(|r| r.url == a.url.as_str()));
+    if !same_articles {
+        model.set_vec(articles.iter().map(row).collect::<Vec<_>>());
+        return;
+    }
+    for (i, a) in articles.iter().enumerate() {
+        let fresh = row(a);
+        if model.row_data(i).is_some_and(|r| r != fresh) {
+            model.set_row_data(i, fresh);
+        }
+    }
+}
+
+/// A layout fold in progress.
+struct Morph {
+    start: Instant,
+    from: RECT,
+    to: RECT,
+    /// Whether the horizontal edges move first (folding into the Sidebar) or the vertical ones.
+    lead_horizontal: bool,
+    /// Tells the vsync thread to stop.
+    stop: Arc<AtomicBool>,
+    /// Frames drawn and the longest gap between two, for the one-line timing note in the log.
+    frames: u32,
+    last: Instant,
+    worst_gap_ms: f32,
+}
+
+const MORPH_MS: f32 = 560.0;
+/// The leading axis moves over the first 74% of the fold, the other over the last 78%. The long overlap
+/// turns the corner into one arc instead of two moves. Tuned by simulating every frame at 164 Hz: this
+/// is the gentlest jolt (largest change in speed between frames) of the curves and overlaps tried.
+const LEAD_END: f32 = 0.74;
+const FOLLOW_START: f32 = 0.22;
+
+/// The window's rectangle at progress `u` (0..1) of a fold from `from` to `to`.
+fn morph_rect(from: RECT, to: RECT, lead_horizontal: bool, u: f32) -> RECT {
+    let lead = smootherstep(u / LEAD_END);
+    let follow = smootherstep((u - FOLLOW_START) / (1.0 - FOLLOW_START));
+    let (h, v) = if lead_horizontal { (lead, follow) } else { (follow, lead) };
+    let lerp = |a: i32, b: i32, k: f32| a + ((b - a) as f32 * k).round() as i32;
+    RECT {
+        left: lerp(from.left, to.left, h),
+        right: lerp(from.right, to.right, h),
+        top: lerp(from.top, to.top, v),
+        bottom: lerp(from.bottom, to.bottom, v),
+    }
+}
+
+/// Ken Perlin's smootherstep: starts and stops with zero speed *and* zero acceleration, so the motion
+/// has no jolt at either end, and peaks at 1.9× the average speed (an ease-in-out cubic peaks at 3×).
+fn smootherstep(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
-    if t < 0.5 { 4.0 * t * t * t } else { 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0 }
+    t * t * t * (t * (6.0 * t - 15.0) + 10.0)
 }
 
 fn today_key() -> String {
@@ -1205,6 +1845,37 @@ fn format_ms(ms: u64) -> String {
     }
 }
 
+fn playlist_rows(list: &[Playlist]) -> ModelRc<PlaylistRow> {
+    let rows: Vec<PlaylistRow> = playlists::ordered(list)
+        .into_iter()
+        .map(|p| PlaylistRow { name: p.name.as_str().into(), uri: p.uri.as_str().into(), pinned: p.pinned })
+        .collect();
+    ModelRc::new(VecModel::from(rows))
+}
+
+/// Opens a Spotify URI in the desktop app, or its web page if the app isn't installed.
+fn open_in_spotify(uri: &str, web: &str) {
+    if !shell_open(uri) {
+        shell_open(web);
+    }
+}
+
+fn fetch_playlist_title(uri: String) {
+    let page = playlists::web_url(&uri).replace(':', "%3A").replace('/', "%2F");
+    let url = format!("https://open.spotify.com/oembed?url={page}");
+    let spawned = std::thread::Builder::new().name("playlist-title".into()).spawn(move || match http::get(&url) {
+        Ok(body) => {
+            if let Some(title) = playlists::title_from_oembed(&body) {
+                post(move |a| a.set_playlist_title(&uri, title));
+            }
+        }
+        Err(e) => storage::log(format!("could not fetch playlist title: {e}")),
+    });
+    if let Err(e) = spawned {
+        storage::log(format!("could not start playlist title lookup: {e}"));
+    }
+}
+
 fn open_spotify() {
     if !shell_open("spotify:") {
         shell_open("https://open.spotify.com");
@@ -1217,5 +1888,80 @@ mod tests {
     fn formats_durations() {
         assert_eq!(super::format_ms(61_000), "1:01");
         assert_eq!(super::format_ms(3_725_000), "1:02:05");
+    }
+
+    #[test]
+    fn layout_fold_is_one_continuous_motion() {
+        use super::morph_rect;
+        use windows::Win32::Foundation::RECT;
+        let r = |l, t, rt, b| RECT { left: l, top: t, right: rt, bottom: b };
+        // Top bar on a 2560×1440 screen folding into a 358px sidebar.
+        let (from, to) = (r(0, 0, 2560, 127), r(0, 0, 358, 1440));
+
+        // Starts and lands exactly; overshoot past the end is clamped.
+        assert_eq!(morph_rect(from, to, true, 0.0), from);
+        assert_eq!(morph_rect(from, to, true, 1.0), to);
+        assert_eq!(morph_rect(from, to, true, 1.4), to);
+
+        // Width only ever shrinks and height only ever grows: no wobble.
+        let frames: Vec<RECT> = (0..=240).map(|i| morph_rect(from, to, true, i as f32 / 240.0)).collect();
+        for w in frames.windows(2) {
+            assert!(w[1].right <= w[0].right && w[1].bottom >= w[0].bottom);
+        }
+        // The old version stopped dead at the corner. Now both edges are moving mid-fold.
+        let (a, b) = (morph_rect(from, to, true, 0.44), morph_rect(from, to, true, 0.48));
+        assert!(b.right < a.right && b.bottom > a.bottom, "{a:?} → {b:?}");
+
+        // Folding back to the top: the height leads instead.
+        let early = morph_rect(to, from, false, 0.2);
+        assert!(early.bottom < to.bottom && early.right == to.right);
+    }
+
+    #[test]
+    fn widget_badges_follow_the_arrangement() {
+        use super::{widget_page, widget_placement};
+        let s = crate::settings::Settings {
+            hud_visible: false, // placement is shown even while the HUD is hidden
+            sidebar_order: vec!["weather".into(), "news".into()],
+            ..Default::default()
+        };
+        // One list drives both layouts, so a widget is either on the HUD or not.
+        assert_eq!(widget_placement(&s, "weather"), ("On HUD", true));
+        assert_eq!(widget_placement(&s, "news"), ("On HUD", true));
+        assert_eq!(widget_placement(&s, "music"), ("Not shown", false));
+        assert_eq!(widget_placement(&s, "stocks"), ("Not shown", false));
+        // Every widget but Tasks & Notes has a settings page, each a different one.
+        let pages: Vec<i32> = crate::settings::WIDGETS.iter().map(|(id, _)| widget_page(id)).collect();
+        assert_eq!(pages.iter().filter(|p| **p < 0).count(), 1);
+        let mut unique = pages.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), pages.len());
+    }
+
+    #[test]
+    fn news_rows_update_in_place() {
+        use slint::{Model, VecModel};
+        let article = |url: &str, published| crate::services::news::Article {
+            title: url.into(),
+            url: url.into(),
+            published: Some(published),
+            publisher: None,
+        };
+        let list = vec![article("https://a", 0), article("https://b", 600)];
+        let model = VecModel::default();
+        super::sync_news_rows(&model, &list, 660);
+        assert_eq!(model.row_count(), 2);
+        assert_eq!(model.row_data(0).unwrap().age, "11m");
+
+        // A minute later only the ages change.
+        super::sync_news_rows(&model, &list, 720);
+        assert_eq!(model.row_data(0).unwrap().age, "12m");
+        assert_eq!(model.row_data(1).unwrap().age, "2m");
+
+        // New articles replace the list.
+        super::sync_news_rows(&model, &[article("https://c", 720)], 720);
+        assert_eq!(model.row_count(), 1);
+        assert_eq!(model.row_data(0).unwrap().url, "https://c");
     }
 }

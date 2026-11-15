@@ -1,0 +1,54 @@
+name: Bug report
+description: Something isn't working as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead. Screenshots help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Switch to the Sidebar layout
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Life HUD version
+      description: Shown in Settings → About.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run `winver` to check.
+      placeholder: "Windows 11 24H2 (build 26100)"
+    validations:
+      required: true
+  - type: dropdown
+    id: layout
+    attributes:
+      label: Layout
+      options: [Top HUD, Sidebar, Both]
+  - type: input
+    id: displays
+    attributes:
+      label: Displays and scaling
+      placeholder: "2 monitors, main is 2560×1440 at 125%"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        Paste the relevant lines from `%LOCALAPPDATA%\LifeHUD\lifehud.log`. It never contains
+        API keys or message text, but check for anything personal (like subreddit or channel names) first.
+      render: text

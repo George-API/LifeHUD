@@ -56,6 +56,7 @@ component TaskRow {
             size: 20px;
             icon-size: 10px;
             icon: @image-url("../icons/xmark.svg");
+            label: "Delete task";
             clicked => { HudState.remove-task(root.task.id); }
         }
     }
@@ -160,7 +161,7 @@ export component TodayStrip inherits Card {
                 vertical-stretch: 1;
                 text <=> HudState.notes;
                 placeholder: "Jot something down…";
-                font-size: 12.5px;
+                font-size: 13px;
                 edited(t) => { HudState.notes-edited(t); }
             }
         }
@@ -183,6 +184,7 @@ export component TodayPanel inherits Card {
             if HudState.done-count > 0 : IconButton {
                 icon: @image-url("../icons/trash.svg");
                 icon-size: 14px;
+                label: "Clear completed tasks";
                 clicked => { HudState.clear-completed(); }
             }
         }
@@ -198,8 +200,9 @@ export component TodayPanel inherits Card {
             if HudState.total-count == 0 : Text {
                 x: 0;
                 y: 2px;
-                text: "Nothing planned yet.";
-                font-size: 12.5px;
+                // The summary above already says nothing's planned; say what to do instead.
+                text: "Add a task below to plan your day.";
+                font-size: 13px;
                 color: Theme.text3;
             }
         }
@@ -232,7 +235,7 @@ export component TodayPanel inherits Card {
             vertical-stretch: 1;
             text <=> HudState.notes;
             placeholder: "Jot something down…";
-            font-size: 13.5px;
+            font-size: 14px;
             edited(t) => { HudState.notes-edited(t); }
         }
     }

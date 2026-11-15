@@ -1,39 +1,52 @@
-// Die-cut sticker art for the mood themes. Each set has two stickers (slot 0 and 1).
+// Die-cut sticker art for the mood themes. Each set has four motifs (ui/stickers/<set>-*.svg),
+// arranged with accents into one large, irregular repeating tile by tools/gen_sticker_tiles.py.
 
-export component Sticker inherits Image {
-    in property <int> set;
-    in property <int> slot;
+import { Theme } from "theme.slint";
 
-    image-fit: contain;
-    source: root.set == 1 ? (root.slot == 0 ? @image-url("stickers/hearth-mug.svg") : @image-url("stickers/hearth-candle.svg"))
-        : root.set == 2 ? (root.slot == 0 ? @image-url("stickers/atelier-palette.svg") : @image-url("stickers/atelier-brush.svg"))
-        : root.set == 3 ? (root.slot == 0 ? @image-url("stickers/metro-skyline.svg") : @image-url("stickers/metro-lamp.svg"))
-        : root.set == 4 ? (root.slot == 0 ? @image-url("stickers/evergreen-pine.svg") : @image-url("stickers/evergreen-mushroom.svg"))
-        : root.set == 5 ? (root.slot == 0 ? @image-url("stickers/neon-bolt.svg") : @image-url("stickers/neon-heart.svg"))
-        : root.set == 6 ? (root.slot == 0 ? @image-url("stickers/nebula-planet.svg") : @image-url("stickers/nebula-rocket.svg"))
-        : @image-url("stickers/nebula-planet.svg"); // unused: callers only show a Sticker when set > 0
-}
 /// A quiet, embossed-looking pattern of the theme's motifs: tinted to the theme ink at very low
 /// opacity, staggered like a brick bond, each motif slightly turned. Clipped by its card.
-export component StickerPattern {
+///
+/// The tile comes pre-rasterized from Rust (src/stickers.rs, at 2×) and is laid out as a few plain
+/// bitmaps: the software renderer re-rasterizes an SVG on every repaint, and the tiles are big and
+/// mask-heavy enough that a card's once-a-second music progress repaint paid ~4 ms for each one.
+/// Anchored like a tiled Image (centred by default), so the pattern sits exactly where it did.
+export component StickerPattern inherits Rectangle {
     in property <int> set;
     in property <color> ink;
     in property <float> strength: 0.06;
-    property <length> step: 56px;
-    property <int> cols: ceil(root.width / root.step) + 1;
+    in property <ImageHorizontalAlignment> horizontal-alignment: center;
+    in property <ImageVerticalAlignment> vertical-alignment: center;
 
-    for i in 96 : Sticker {
-        property <int> cx: mod(i, root.cols);
-        property <int> cy: floor(i / root.cols);
-        set: root.set;
-        slot: mod(self.cy + self.cx, 2);
-        width: 20px;
-        height: 20px;
-        x: self.cx * root.step + (mod(self.cy, 2) == 1 ? root.step / 2 : 0px) - 12px;
-        y: self.cy * root.step * 0.78 + 6px;
-        visible: self.y < root.height + 4px;
-        transform-rotation: (mod(i * 37, 40) - 20) * 1deg;
-        colorize: root.ink;
-        opacity: root.strength;
+    property <image> tile: Theme.sticker-tile(root.set);
+    // Logical tile size: the bitmap is rendered at 2× (SCALE in src/stickers.rs).
+    property <length> tw: root.tile.width * 1px / 2;
+    property <length> th: root.tile.height * 1px / 2;
+    // Offset of the first (top-left) tile, in (-tile, 0].
+    property <length> ox: root.tw <= 0 ? 0 : root.horizontal-alignment == ImageHorizontalAlignment.left ? 0
+        : root.first((root.horizontal-alignment == ImageHorizontalAlignment.center ? 0.5 : 1) * (root.width - root.tw), root.tw);
+    property <length> oy: root.th <= 0 ? 0 : root.vertical-alignment == ImageVerticalAlignment.top ? 0
+        : root.first((root.vertical-alignment == ImageVerticalAlignment.center ? 0.5 : 1) * (root.height - root.th), root.th);
+    property <int> cols: root.tw <= 0 ? 0 : ceil((root.width - root.ox) / root.tw);
+    property <int> rows: root.th <= 0 ? 0 : ceil((root.height - root.oy) / root.th);
+
+    /// Steps an anchored tile position back to the first tile that reaches the left/top edge.
+    pure function first(at: length, size: length) -> length {
+        at - ceil(at / size) * size
+    }
+
+    clip: true;
+
+    for r in root.rows : Rectangle {
+        y: root.oy + r * root.th;
+        height: root.th;
+        for c in root.cols : Image {
+            x: root.ox + c * root.tw;
+            width: root.tw;
+            height: root.th;
+            source: root.tile;
+            image-fit: fill;
+            colorize: root.ink;
+            opacity: root.strength;
+        }
     }
 }

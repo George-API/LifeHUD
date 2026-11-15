@@ -1,0 +1,342 @@
+// The Search & AI panel: a small floating window that drops down from the Top HUD or slides out
+// beside the Sidebar. Google search sits on the left; ChatGPT, Claude and Gemini on the right.
+// Rust owns the conversations; this file only renders them and reports what the user does.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { IconButton, PillButton, GhostLineEdit } from "components.slint";
+
+export struct ChatMessage {
+    from-user: bool,
+    text: string,
+}
+
+export global ChatState {
+    /// 0 Google search, then the AI tabs (1 ChatGPT, 2 Claude, 3 Gemini).
+    in-out property <int> tab;
+    /// Names of the AI tabs, in order; tab index = position + 1.
+    in property <[string]> ai-tabs: ["ChatGPT", "Claude", "Gemini"];
+    /// The Google search tab is showing.
+    in property <bool> is-search: true;
+    in property <string> provider-name: "Google";
+    in property <string> vendor: "Anthropic";
+    in property <string> model;
+    in property <bool> has-key;
+    in property <[ChatMessage]> messages;
+    /// A reply is streaming.
+    in property <bool> busy;
+    /// Busy, but no text has arrived yet.
+    in property <bool> waiting;
+    /// A one-line status under the conversation (an error, or why a reply stopped).
+    in property <string> notice;
+    in-out property <string> draft;
+
+    callback select-tab(int);
+    /// Search (on the Google tab) or send to the current AI tab.
+    callback send(string);
+    /// Switch to an AI tab and send it this text.
+    callback ask(int, string);
+    callback stop();
+    callback new-chat();
+    callback close();
+    callback open-settings();
+}
+
+component Tab {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked;
+
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-item-selected: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    height: 26px;
+    min-width: label.preferred-width + 20px;
+
+    Rectangle {
+        border-radius: self.height / 2;
+        background: root.selected ? Theme.fill-hover : ta.has-hover ? Theme.fill : transparent;
+        animate background { duration: 120ms; }
+    }
+    label := Text {
+        text: root.label;
+        font-size: 12px;
+        font-weight: root.selected ? 600 : 400;
+        color: root.selected ? Theme.text : Theme.text2;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// One message. Text is selectable so replies can be copied with Ctrl+C.
+component Bubble {
+    in property <ChatMessage> message;
+    /// Widest a user bubble may grow. Passed in (not derived from our own width) to avoid a
+    /// binding loop through the scroll view's content width.
+    in property <length> max-bubble-width: 300px;
+
+    HorizontalLayout {
+        alignment: root.message.from-user ? end : stretch;
+        Rectangle {
+            border-radius: 12px;
+            background: root.message.from-user ? Theme.fill-hover : transparent;
+            max-width: root.message.from-user ? root.max-bubble-width : 10000px;
+            HorizontalLayout {
+                padding-left: root.message.from-user ? 11px : 2px;
+                padding-right: root.message.from-user ? 11px : 2px;
+                padding-top: root.message.from-user ? 7px : 0px;
+                padding-bottom: root.message.from-user ? 7px : 0px;
+                TextInput {
+                    text: root.message.text;
+                    read-only: true;
+                    single-line: false;
+                    wrap: word-wrap;
+                    font-size: 13px;
+                    color: Theme.text;
+                    selection-background-color: Theme.accent.with-alpha(0.4);
+                    selection-foreground-color: Theme.text;
+                }
+            }
+        }
+    }
+}
+
+export component ChatWindow inherits Window {
+    title: "Life HUD Search";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    default-font-family: Theme.font;
+    width: 400px;
+    height: 560px;
+
+    init => { composer.focus(); }
+
+    Rectangle { background: Theme.hud-tint; }
+    Rectangle { background: Theme.card; }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                ChatState.close();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 10px;
+
+            // Header: provider tabs, then new chat and close.
+            HorizontalLayout {
+                spacing: 2px;
+                Tab {
+                    label: "Google";
+                    selected: ChatState.is-search;
+                    clicked => { ChatState.select-tab(0); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                for name[i] in ChatState.ai-tabs : Tab {
+                    label: name;
+                    selected: ChatState.tab == i + 1;
+                    clicked => { ChatState.select-tab(i + 1); }
+                }
+                Rectangle { width: 6px; }
+                IconButton {
+                    size: 28px;
+                    icon-size: 14px;
+                    icon: @image-url("icons/plus.svg");
+                    label: "New chat";
+                    enabled: !ChatState.is-search && (ChatState.messages.length > 0 || ChatState.busy);
+                    clicked => { ChatState.new-chat(); }
+                }
+                IconButton {
+                    size: 28px;
+                    icon-size: 13px;
+                    icon: @image-url("icons/xmark.svg");
+                    label: "Close";
+                    clicked => { ChatState.close(); }
+                }
+            }
+
+            Rectangle { height: 1px; background: Theme.divider; }
+
+            // Google: type and press Enter to search in the browser, or hand the text to an AI tab.
+            if ChatState.is-search : VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                spacing: 12px;
+                padding: 24px;
+                Image {
+                    source: @image-url("icons/search.svg");
+                    height: 28px;
+                    colorize: Theme.text3;
+                }
+                Text {
+                    text: "Search Google";
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: Theme.text;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Results open in your browser. Or ask an assistant instead:";
+                    font-size: 12px;
+                    color: Theme.text2;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    for name[i] in ChatState.ai-tabs : PillButton {
+                        text: "Ask " + name;
+                        clicked => {
+                            if ChatState.draft == "" {
+                                ChatState.select-tab(i + 1);
+                            } else {
+                                ChatState.ask(i + 1, ChatState.draft);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // No key yet for this provider: explain, and point at Settings.
+            if !ChatState.is-search && !ChatState.has-key : VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                spacing: 12px;
+                padding: 24px;
+                Image {
+                    source: @image-url("icons/sparkle.svg");
+                    height: 28px;
+                    colorize: Theme.text3;
+                }
+                Text {
+                    text: "Chat with " + ChatState.provider-name;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: Theme.text;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Add your " + ChatState.vendor + " API key in Settings to start. It's stored in Windows Credential Manager, and usage is billed to your " + ChatState.vendor + " account.";
+                    font-size: 12px;
+                    color: Theme.text2;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    PillButton { text: "Open Settings"; clicked => { ChatState.open-settings(); } }
+                }
+            }
+
+            if !ChatState.is-search && ChatState.has-key : VerticalLayout {
+                vertical-stretch: 1;
+                spacing: 8px;
+
+                if ChatState.messages.length == 0 && !ChatState.busy : VerticalLayout {
+                    vertical-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: "Ask " + ChatState.provider-name + " anything";
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: Theme.text;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: ChatState.model;
+                        font-size: 11px;
+                        color: Theme.text3;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if ChatState.messages.length > 0 || ChatState.busy : scroll := ScrollView {
+                    vertical-stretch: 1;
+                    // Follow the reply as it streams in.
+                    changed content-height => {
+                        self.content-y = min(0px, self.visible-height - self.content-height);
+                    }
+                    VerticalLayout {
+                        spacing: 12px;
+                        padding-right: 6px;
+                        for message in ChatState.messages : Bubble { message: message; max-bubble-width: (root.width - 40px) * 0.85; }
+                        if ChatState.waiting : Text {
+                            text: "Thinking…";
+                            font-size: 12px;
+                            color: Theme.text3;
+                        }
+                    }
+                }
+
+                if ChatState.notice != "" : Text {
+                    text: ChatState.notice;
+                    font-size: 12px;
+                    color: Theme.text2;
+                    wrap: word-wrap;
+                }
+            }
+
+            // Composer
+            Rectangle {
+                height: 40px;
+                border-radius: 20px;
+                background: Theme.input;
+                border-width: 1px;
+                border-color: Theme.divider;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 5px;
+                    spacing: 6px;
+                    composer := GhostLineEdit {
+                        font-size: 13px;
+                        text <=> ChatState.draft;
+                        placeholder: ChatState.is-search ? "Search Google" : ChatState.has-key ? "Message " + ChatState.provider-name : "Add an API key in Settings to chat";
+                        accepted(text) => {
+                            if ChatState.has-key && !ChatState.busy {
+                                ChatState.send(text);
+                            }
+                        }
+                    }
+                    if !ChatState.busy : IconButton {
+                        y: (parent.height - self.height) / 2;
+                        size: 30px;
+                        icon-size: 15px;
+                        icon: ChatState.is-search ? @image-url("icons/search.svg") : @image-url("icons/arrow-up.svg");
+                        label: ChatState.is-search ? "Search Google" : "Send";
+                        enabled: ChatState.has-key && ChatState.draft != "";
+                        clicked => { ChatState.send(ChatState.draft); }
+                    }
+                    if ChatState.busy : IconButton {
+                        y: (parent.height - self.height) / 2;
+                        size: 30px;
+                        icon-size: 14px;
+                        icon: @image-url("icons/stop.svg");
+                        label: "Stop";
+                        clicked => { ChatState.stop(); }
+                    }
+                }
+            }
+
+            Text {
+                text: ChatState.is-search ? "Opens google.com in your browser." : ChatState.has-key ? ChatState.model + " · Replies can be wrong. Check anything important." : "";
+                font-size: 11px;
+                color: Theme.text3;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}

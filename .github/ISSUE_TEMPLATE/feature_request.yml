@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a widget, theme or improvement.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/FUTURE.md](https://github.com/George-API/LifeHUD/blob/main/docs/FUTURE.md) first, since your idea may already be planned.
+        Life HUD aims to stay calm and light, so ideas that fit both layouts are the easiest to take on.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like, and why?
+      description: Describe what you're trying to do, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How might it look?
+      description: Sketches, mockups or examples from other apps are welcome.
+  - type: dropdown
+    id: layout
+    attributes:
+      label: Which layout does this affect?
+      options: [Top HUD, Sidebar, Both, Settings]

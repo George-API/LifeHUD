@@ -1,0 +1,357 @@
+// Building blocks for Settings pages, shared by ui/settings.slint and the feed widget pages
+// (ui/feeds/settings.slint).
+
+import { Theme } from "theme.slint";
+
+export global Look {
+    out property <color> window: Theme.dark ? #1e1e20 : #f2f2f7;
+    out property <color> sidebar: Theme.dark ? #26262a : #e8e8ed;
+    out property <color> group: Theme.dark ? #2c2c2e : #ffffff;
+    out property <color> group-border: Theme.dark ? #ffffff0d : #0000000a;
+    out property <color> separator: Theme.dark ? #ffffff14 : #0000001a;
+    out property <color> label: Theme.dark ? #ffffffeb : #000000e0;
+    out property <color> secondary: Theme.dark ? #ffffff8c : #3c3c4399;
+    out property <color> hover: Theme.dark ? #ffffff0f : #0000000a;
+    out property <color> tertiary: Theme.dark ? #ffffff4d : #3c3c434d;
+    /// The sidebar's selected row: a calm neutral fill rather than a loud accent block.
+    out property <color> selection: Theme.dark ? #ffffff1c : #0000001a;
+    // Controls (push buttons, pop-up buttons): a raised fill with a hairline edge.
+    out property <color> control: Theme.dark ? #ffffff1f : #ffffff;
+    out property <color> control-pressed: Theme.dark ? #ffffff30 : #e5e5ea;
+    out property <color> control-border: Theme.dark ? #ffffff0a : #0000001f;
+    out property <color> field: Theme.dark ? #ffffff0d : #ffffff;
+    out property <color> field-border: Theme.dark ? #ffffff1f : #0000002b;
+    out property <color> menu: Theme.dark ? #2c2c2e : #fbfbfd;
+    out property <color> destructive: Theme.dark ? #ff453a : #d70015;
+    out property <string> font: "Segoe UI Variable Text";
+    out property <string> display-font: "Segoe UI Variable Display";
+}
+
+export component Group inherits Rectangle {
+    background: Look.group;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Look.group-border;
+    VerticalLayout {
+        padding-left: 14px;
+        @children
+    }
+}
+
+export component Row {
+    in property <string> label;
+    in property <string> detail;
+    in property <bool> last;
+
+    // Grows for a two-line label + detail, never shorter than a standard row.
+    min-height: max(40px, content.min-height);
+
+    content := HorizontalLayout {
+        padding-right: 12px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 1px;
+            Text { text: root.label; font-size: 13px; color: Look.label; }
+            if root.detail != "" : Text { text: root.detail; font-size: 11px; color: Look.secondary; wrap: word-wrap; }
+        }
+        // Trailing controls keep their own compact height, centred on the row.
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            HorizontalLayout {
+                alignment: end;
+                spacing: 6px;
+                @children
+            }
+        }
+    }
+    if !root.last : Rectangle {
+        y: root.height - 1px;
+        height: 1px;
+        background: Look.separator;
+    }
+}
+
+export component OrderButton {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    /// Shown in the accent colour (e.g. a pinned pin).
+    in property <bool> active;
+    callback clicked;
+    width: 28px;
+    height: 28px;
+    Rectangle {
+        border-radius: 6px;
+        background: ta.has-hover && root.enabled ? Look.hover : transparent;
+    }
+    Image {
+        source: root.icon;
+        width: 15px;
+        height: 15px;
+        colorize: root.active ? Theme.accent : root.enabled ? Look.label : Look.secondary;
+        opacity: root.enabled ? 1 : 0.35;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A compact, rounded push button (macOS style). `primary` fills it with the accent colour;
+/// `destructive` colours the label for actions that remove or reset things.
+export component PushButton {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary;
+    in property <bool> destructive;
+    callback clicked;
+
+    height: 24px;
+    min-width: max(60px, label.preferred-width + 24px);
+    horizontal-stretch: 0;
+    opacity: root.enabled ? 1 : 0.45;
+
+    Rectangle {
+        border-radius: 6px;
+        background: root.primary
+            ? (ta.pressed ? Theme.accent.darker(0.15) : Theme.accent)
+            : (ta.pressed ? Look.control-pressed : Look.control);
+        border-width: root.primary ? 0 : 1px;
+        border-color: Look.control-border;
+        drop-shadow-blur: Theme.dark ? 0 : 1px;
+        drop-shadow-offset-y: 0.5px;
+        drop-shadow-color: #0000001a;
+    }
+    label := Text {
+        text: root.text;
+        font-size: 13px;
+        font-weight: root.primary ? 600 : 500;
+        color: root.primary ? Theme.on-accent : root.destructive ? Look.destructive : Look.label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A macOS pop-up button: shows the current choice and opens a menu with a checkmark beside it.
+/// Same shape as std ComboBox (`model`, `current-index`, `selected`).
+export component PopupSelect {
+    in property <[string]> model;
+    in-out property <int> current-index;
+    in property <bool> enabled: true;
+    callback selected(int);
+
+    height: 24px;
+    min-width: 120px;
+    horizontal-stretch: 0;
+    opacity: root.enabled ? 1 : 0.45;
+
+    Rectangle {
+        border-radius: 6px;
+        background: ta.pressed ? Look.control-pressed : Look.control;
+        border-width: 1px;
+        border-color: Look.control-border;
+        drop-shadow-blur: Theme.dark ? 0 : 1px;
+        drop-shadow-offset-y: 0.5px;
+        drop-shadow-color: #0000001a;
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 4px;
+        spacing: 6px;
+        Text {
+            text: root.model[root.current-index];
+            font-size: 13px;
+            color: Look.label;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        // The up/down chevrons in an accent capsule, as on macOS.
+        Rectangle {
+            width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: Theme.accent;
+            Image { source: @image-url("icons/chevron-up.svg"); y: 2px; width: 8px; height: 8px; colorize: Theme.on-accent; }
+            Image { source: @image-url("icons/chevron-down.svg"); y: 6px; width: 8px; height: 8px; colorize: Theme.on-accent; }
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { menu.show(); }
+    }
+
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: max(root.width, 160px);
+        Rectangle {
+            background: Look.menu;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Look.control-border;
+            drop-shadow-blur: 18px;
+            drop-shadow-offset-y: 6px;
+            drop-shadow-color: #00000040;
+        }
+        VerticalLayout {
+            padding: 5px;
+            for item[i] in root.model : Rectangle {
+                height: 24px;
+                border-radius: 5px;
+                background: row.has-hover ? Theme.accent : transparent;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 10px;
+                    spacing: 5px;
+                    Image {
+                        source: @image-url("icons/check.svg");
+                        width: 12px;
+                        height: 12px;
+                        y: (parent.height - self.height) / 2;
+                        colorize: row.has-hover ? Theme.on-accent : Look.label;
+                        opacity: i == root.current-index ? 1 : 0;
+                    }
+                    Text {
+                        text: item;
+                        font-size: 13px;
+                        color: row.has-hover ? Theme.on-accent : Look.label;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+                row := TouchArea {
+                    clicked => {
+                        root.current-index = i;
+                        root.selected(i);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A rounded text field with a soft accent focus ring. Same shape as std LineEdit (`text`,
+/// `placeholder-text`, `input-type`, `accepted`, `edited`).
+export component TextField {
+    in property <string> placeholder-text;
+    in property <InputType> input-type: InputType.text;
+    in property <bool> enabled: true;
+    in-out property <string> text <=> input.text;
+    callback accepted(string);
+    callback edited(string);
+
+    height: 26px;
+    min-width: 120px;
+    horizontal-stretch: 0;
+
+    // Focus ring
+    if input.has-focus : Rectangle {
+        x: -3px;
+        y: -3px;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: 9px;
+        border-width: 3px;
+        border-color: Theme.accent.with-alpha(0.35);
+    }
+    Rectangle {
+        border-radius: 6px;
+        background: Look.field;
+        border-width: 1px;
+        border-color: input.has-focus ? Theme.accent : Look.field-border;
+    }
+    if input.text == "" : Text {
+        x: 8px;
+        width: parent.width - 16px;
+        text: root.placeholder-text;
+        font-size: 13px;
+        color: Look.tertiary;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    input := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        font-size: 13px;
+        color: Look.label;
+        vertical-alignment: center;
+        single-line: true;
+        enabled: root.enabled;
+        input-type: root.input-type;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        selection-foreground-color: Look.label;
+        accepted => { root.accepted(self.text); }
+        edited => { root.edited(self.text); }
+    }
+}
+
+export component Footnote inherits Text {
+    font-size: 11px;
+    color: Look.secondary;
+    wrap: word-wrap;
+}
+
+export component Segmented {
+    in property <[string]> items;
+    in-out property <int> index;
+    in property <bool> enabled: true;
+    callback changed(int);
+
+    height: 26px;
+    min-width: root.items.length * 66px;
+    opacity: root.enabled ? 1 : 0.4;
+
+    Rectangle {
+        border-radius: 7px;
+        background: Theme.dark ? #ffffff17 : #7676801f;
+    }
+    Rectangle {
+        x: 2px + root.index * (root.width - 4px) / max(1, root.items.length);
+        y: 2px;
+        width: (root.width - 4px) / max(1, root.items.length);
+        height: root.height - 4px;
+        border-radius: 6px;
+        background: Theme.dark ? #636366 : #ffffff;
+        drop-shadow-blur: 2px;
+        drop-shadow-offset-y: 1px;
+        drop-shadow-color: #00000026;
+        animate x { duration: 200ms; easing: ease-out; }
+    }
+    HorizontalLayout {
+        padding: 2px;
+        for item[i] in root.items : Rectangle {
+            Text {
+                text: item;
+                font-size: 12px;
+                font-weight: i == root.index ? 600 : 400;
+                color: Look.label;
+            }
+            TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    root.index = i;
+                    root.changed(i);
+                }
+            }
+        }
+    }
+}
+
+export component PageTitle inherits Text {
+    font-family: Look.display-font;
+    font-size: 22px;
+    font-weight: 700;
+    color: Look.label;
+}

@@ -1,115 +1,105 @@
+<div align="center">
+
+<img src="assets/icon.png" width="80" alt="">
+
 # Life HUD
 
-A calm, native desktop HUD for Windows 11. Weather, time, tasks, notes, news and music live in a slim
-strip across the top of your screen, or in a sidebar, and your other windows make room for it.
+A heads-up display for Windows, docked to the edge of your screen.<br>
+Written in Rust.
 
-Built in Rust with [Slint](https://slint.dev). Single 12 MB executable, about 9 MB of private memory, starts in
-under half a second.
+[![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Release](https://img.shields.io/github/v/release/George-API/LifeHUD?color=2ea44f)](https://github.com/George-API/LifeHUD/releases/latest)
+[![CI](https://github.com/George-API/LifeHUD/actions/workflows/ci.yml/badge.svg)](https://github.com/George-API/LifeHUD/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Features
+<br>
 
-- **Two layouts.** A Top HUD with the clock centred on the screen, or a Sidebar. Switching between them
-  plays a short animation where the bar folds from one edge to the other.
-- **Reserves real screen space.** It registers as a shell AppBar, so maximized windows fill the rest of
-  the desktop. Optionally, open windows are refitted proportionally too: a window snapped to the left half
-  stays the left half of what's left.
-- **Steps aside for fullscreen.** Games, video and presentations get the whole screen.
-- **Clock.** Lock-screen style. Follows your regional date format and 12/24-hour setting.
-- **Weather.** From [Open-Meteo](https://open-meteo.com), with no account needed. Uses Windows location or a city you
-  choose. Shows an hourly strip and a multi-day forecast with temperature range bars. Works offline from cache.
-- **Tasks and notes.** One card shows a daily checklist next to a scratchpad. Unfinished tasks carry over;
-  tasks finished on an earlier day are cleared at midnight. Everything saves automatically.
-- **News.** Two tabs. *Curated* leans towards technology and science (Bloomberg Technology, The Verge,
-  Ars Technica, Nature, NASA, …). *Top* has general headlines (Google News for your region, BBC, CBC,
-  NYT, …). Headlines come from free public feeds and open in your browser.
-- **Music.** Spotify (or any player that publishes to Windows media controls) with artwork, a timeline and
-  controls. No sign-in needed.
-- **Themes.**
-  - *Signature* themes are pure colour: Classic (follows Windows), Graphite, Midnight, Starlight, Titanium
-    and Rosé.
-  - *Mood* themes add a subtle embossed pattern of motifs to the cards: Hearth, Atelier, Metropolis,
-    Evergreen, Neon and Nebula.
+<img src="docs/images/sidebar.png" width="340" alt="Life HUD as a sidebar: the time, today's tasks and notes, and the weather">
+
+<br>
+<br>
+
+</div>
+
+Life HUD puts a clock and four widgets of your choice in a slim bar across the top of the screen, or a
+column down the side. It reserves that space the way the taskbar does, so windows resize around it
+instead of sliding under it. Fullscreen apps still cover it.
+
+It's a single native exe written in Rust: no Electron, no runtime, nothing to install alongside it. It
+uses about half a percent of one CPU core with music playing. No account, no telemetry.
 
 ## Install
 
-### Build from source
+Download `lifehud.exe` from the [latest release](https://github.com/George-API/LifeHUD/releases/latest)
+and run it. That's the install: it copies itself to `%LOCALAPPDATA%\Programs\LifeHUD`, adds itself to
+the Start menu and to *Settings → Apps*, and starts. No admin, no wizard. Running a newer download
+later updates it the same way.
 
-Requirements: Windows 10 2004 or later (Windows 11 recommended), [Rust](https://rustup.rs) (stable, MSVC
-toolchain) and the Visual Studio C++ Build Tools.
+Want it portable instead? Put an empty file named `portable` next to the exe.
 
-```powershell
-git clone <this repo>
-cd LifeHUD
-powershell -ExecutionPolicy Bypass -File tools\install.ps1
-```
+Windows 10 (2004) or later. The exe isn't signed yet, so SmartScreen will ask the first time
+(*More info → Run anyway*). Releases are built by [CI](.github/workflows/release.yml) from this repo and
+come with a SHA-256.
 
-`install.ps1` builds a release binary, copies it to `%LOCALAPPDATA%\Programs\LifeHUD`, and adds Desktop
-and Start menu shortcuts. To develop, run `cargo run` instead.
+## What's in it
 
-### Use
+- Clock and date, in your regional format
+- Weather from [Open-Meteo](https://open-meteo.com): hourly and daily, cached for when you're offline
+- Tasks and a scratchpad. Unfinished tasks roll over to the next day.
+- Music: Spotify, or anything that uses Windows media controls, with seek and the player's own volume.
+  Right-click it for your saved playlists.
+- Reddit: r/popular and your subreddits, with a quick picker
+- YouTube and Netflix: new uploads from your channels, Netflix's Top 10, and whatever you're watching in
+  your browser right now
+- News, sports scores for your teams, and a stock watchlist
+- A search box: Enter goes to Google, or send the question to ChatGPT, Claude or Gemini with your own key
 
-- **Tray icon.** Left-click opens Settings, or brings back a hidden HUD. Right-click to show or hide the
-  HUD, switch layout, or quit.
-- **Settings.** Choose layout, size, display, theme, weather location and units, news sources, and the
-  sidebar card order. You can also turn on *Open at login*.
-- **Command line.** `lifehud.exe --exit` closes a running copy cleanly and gives the screen space back.
-  Launching the app a second time opens Settings.
+Pick any four widgets; the bar and the sidebar always show the same ones. Long-press the HUD to drag
+them around, or use *Settings → Widgets*. Twelve themes, a hover away under the paintbrush.
+
+<img src="docs/images/settings-widgets.png" width="720" alt="Settings, Widgets page">
 
 ## Privacy
 
-Everything you write stays on your PC, in `%LOCALAPPDATA%\LifeHUD`. The app has no accounts, no telemetry
-and no analytics. It only makes these network requests:
+Everything stays in `%LOCALAPPDATA%\LifeHUD`. Each widget talks only to its own source: Open-Meteo,
+the news feeds in [`news.rs`](src/services/news.rs), ESPN, YouTube, Reddit, Netflix and Yahoo Finance.
+Sports, YouTube, Reddit, Netflix and Stocks only connect while they're on screen.
 
-| What | Where |
-|---|---|
-| Weather and city search | `api.open-meteo.com`, `geocoding-api.open-meteo.com` |
-| Headlines | The feed URLs listed in `src/services/news.rs` |
-| Music | Nothing. Read locally from Windows media controls. |
-| Location | Windows Location Services, only if no city is set. Coordinates go only to Open-Meteo. |
+Music and "now watching" are read locally from Windows media controls. To tell a YouTube tab from a
+Netflix one, Life HUD compares the titles of open browser windows in memory; they're never stored or
+logged.
 
-## Architecture
+The AI tabs send messages only when you hit send, and only to the provider you picked. Conversations
+aren't saved, and API keys are kept in Windows Credential Manager.
+
+## Usage
+
+The tray icon opens Settings, and its menu has show/hide, layout, *Search & Ask…*, *Edit Widgets…* and
+quit. Launching the exe again also opens Settings. `lifehud.exe --exit` quits and gives the screen space
+back.
+
+In edit mode, drag cards to reorder them, drag one onto the tray to remove it, or drop a widget from the
+tray onto a card to swap it in. Esc or a click on empty space finishes; Ctrl+Z undoes.
+
+If a window won't move out of the way, it belongs to an app running as admin; Windows doesn't allow it.
+Uninstall from *Settings → Apps* like anything else. Your tasks, notes and settings stay in
+`%LOCALAPPDATA%\LifeHUD` until you delete that folder.
+
+## Building
+
+Rust 1.92+ with the MSVC toolchain.
 
 ```
-ui/                 Slint markup
-  theme.slint       Design tokens (every colour is set from Rust)
-  hud.slint         The docked window and the two layouts
-  widgets/          Clock, weather, today (tasks + notes), news, music, chrome
-  settings.slint    macOS-style settings window (Cupertino widget style)
-src/
-  app.rs            Controller: state, wiring, docking and layout animation
-  platform/         All Win32/WinRT access: AppBar, acrylic, monitors, window reflow, tray, single instance
-  services/         Background threads: weather, news (RSS/Atom), media (SMTC), HTTPS (SChannel)
-  theme.rs          Palettes; every token is derived from a handful of colours
-  tasks.rs          Daily task list (unit-tested)
-  settings.rs, storage.rs, locale.rs
+cargo run --release
 ```
 
-Design notes:
-
-- **Unsafe code is confined to `src/platform`.** Each block is a thin, commented wrapper around a Windows
-  API.
-- **The UI thread never blocks on I/O.** Services run on their own threads and post results back with
-  `slint::invoke_from_event_loop`.
-- **Rendering uses Slint's software renderer.** For a mostly static HUD it uses about 90% less memory than
-  GPU rendering, at the same visual quality. See [docs/REVIEW.md](docs/REVIEW.md).
-- **Adding a theme** is one entry in `src/theme.rs`.
-- **Adding a news source** is one line in `src/services/news.rs`.
-
-## Development
-
-```powershell
-cargo test                      # unit tests: parsing, tasks, settings, layout maths
-cargo clippy --all-targets      # should be warning-free
-cargo fmt
-python tools\gen_weather_icon.py   # regenerates ui/weather-icon.slint
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Rust and [Slint](https://slint.dev), talking to Win32 and WinRT directly. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the layout of the code, and [SECURITY.md](SECURITY.md) for
+reporting vulnerabilities.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. The UI uses Slint under its royalty-free desktop license, which needs the "Made with Slint" badge
+on the About page; keep it if you ship your own builds.
 
-The UI is built with [Slint](https://slint.dev), used under its Royalty-free Desktop license, which requires
-attribution. The About page in Settings shows the "Made with Slint" badge. Please keep it if you
-redistribute builds. News headlines and links belong to their publishers.
+Not affiliated with Spotify, YouTube, Reddit, Netflix, ESPN, Yahoo, OpenAI, Anthropic or Google.

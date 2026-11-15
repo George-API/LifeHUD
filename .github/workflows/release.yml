@@ -1,0 +1,96 @@
+name: Release
+
+# Push a version tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to build and publish a release.
+#
+# Optional, each skipped until configured (see docs/RELEASING.md):
+#   Code signing  repository variables AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#                 AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE (OIDC, no secrets)
+#   winget        secret WINGET_TOKEN, once the first version has been accepted into winget-pkgs
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    # A stable identity for Azure's federated credential, and a place to require approval to ship.
+    environment: release
+    permissions:
+      contents: write # publish the release
+      id-token: write # Azure sign-in (OIDC) and the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --locked --release
+
+      - name: Sign in to Azure
+        if: vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign
+        if: vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\target\release\lifehud.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      # Signed (or not), this is the exact file people download: hash and attest it last.
+      - name: Checksum and notes
+        shell: pwsh
+        env:
+          SIGNED: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        run: |
+          $hash = (Get-FileHash target/release/lifehud.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  lifehud.exe" | Out-File -Encoding ascii target/release/lifehud.exe.sha256
+          $smartscreen = if ($env:SIGNED -eq 'true') { '' } else {
+            "The exe isn't code-signed yet, so SmartScreen may ask the first time: choose **More info → Run anyway**.`n`n"
+          }
+          @"
+          Download ``lifehud.exe`` and run it. It installs itself for your user (no admin) and adds a Start menu entry.
+
+          $smartscreen
+          SHA-256: ``$hash``. Verify where it was built with ``gh attestation verify lifehud.exe -R ${{ github.repository }}``.
+
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what's new.
+          "@ | Out-File -Encoding utf8 release-notes.md
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: target/release/lifehud.exe
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          files: |
+            target/release/lifehud.exe
+            target/release/lifehud.exe.sha256
+
+  winget:
+    # Opens the winget-pkgs pull request for each new version. The very first version is submitted
+    # by hand (docs/RELEASING.md); after that this keeps it up to date.
+    needs: release
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - if: env.WINGET_TOKEN != ''
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: GeorgeAPI.LifeHUD
+          installers-regex: '^lifehud\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}

@@ -5,6 +5,8 @@ export global Theme {
     in-out property <bool> dark: true;
     /// Mood themes carry a pair of stickers (0 = none).
     in-out property <int> sticker-set: 0;
+    /// A set's sticker tile, rasterized once in Rust (src/stickers.rs). Empty until registered.
+    pure callback sticker-tile(int) -> image;
 
     // HUD surfaces
     // Ambient light: three stops of a soft diagonal gradient over the glass.
@@ -33,7 +35,7 @@ export global Theme {
     in-out property <color> on-accent: #000000;
     in-out property <color> play-bg: #fffffff2;
     in-out property <color> play-fg: #1a1a1e;
-    out property <brush> cloud: dark ? @linear-gradient(180deg, #ffffff 0%, #c3ccda 100%) : @linear-gradient(180deg, #c4cedc 0%, #7e8da5 100%);
+    out property <brush> cloud: dark ? @linear-gradient(180deg, #eef1f5 0%, #bcc5d2 100%) : @linear-gradient(180deg, #c4cedc 0%, #7e8da5 100%);
 
     // Type
     out property <string> font: "Segoe UI";

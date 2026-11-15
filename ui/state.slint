@@ -40,8 +40,8 @@ export struct TaskData {
 export global HudState {
     // Layout
     in property <bool> vertical;
-    /// Sidebar card order: 0 weather, 1 music, 2 today, 3 news.
-    in property <[int]> sidebar-order: [0, 1, 2, 3];
+    /// Sidebar card order, by kind (0 weather, 1 music, 2 today, 3 news, …). Set from Rust.
+    in property <[int]> sidebar-order: [0, 2, 3, 1];
     /// True while the HUD morphs between layouts; content fades out and back in.
     in property <bool> transitioning;
 
@@ -105,7 +105,36 @@ export global HudState {
     callback play-pause();
     callback next-track();
     callback previous-track();
+    /// The player accepts seeking; the progress bar becomes clickable.
+    in property <bool> can-seek;
+    /// Jump to this fraction (0..1) of the track.
+    callback seek(float);
+    /// The player's own volume (0..1) in the Windows mixer; the slider shows only when available.
+    in-out property <bool> volume-available;
+    in-out property <float> volume: 1;
+    callback set-volume(float);
+    /// The Top HUD's music strip is showing its volume slider (the speaker button toggles it).
+    in-out property <bool> volume-open;
+
+    // Now watching: a YouTube or Netflix video playing in a browser tab (see ui/widgets/watching.slint).
+    in property <bool> watching;
+    /// "youtube" or "netflix".
+    in property <string> watching-site;
+    in property <string> watching-title;
+    in property <string> watching-subtitle;
+    in property <string> watching-browser;
+    in property <bool> watching-playing;
+    in property <float> watching-progress;
+    in property <bool> watching-can-seek;
+    in property <image> watching-art;
+    in property <bool> watching-has-art;
+    callback watching-play-pause();
+    callback watching-seek(float);
+    /// Bring the browser window that's playing it to the front.
+    callback watching-open();
     callback open-spotify();
+    /// Right-click on the music card: show the saved playlists menu at the cursor.
+    callback show-playlists();
 
     // News
     /// 0 = Curated (left tab), 1 = Top (right tab).
@@ -118,7 +147,12 @@ export global HudState {
     callback open-article(string);
 
     // Chrome
+    /// Show the AI chat button (Settings → AI).
+    in property <bool> ai-button: true;
+    callback open-chat();
     callback open-settings();
     callback toggle-layout();
     callback hide-hud();
+    /// The theme quick-swap menu (the paintbrush button).
+    callback open-themes();
 }

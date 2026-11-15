@@ -1,0 +1,219 @@
+// Stocks: a watchlist and market indices with intraday sparklines, styled after Apple's Stocks app:
+// symbol and name, a sparkline against the previous close, then price over a coloured change pill.
+
+import { Theme } from "../theme.slint";
+import { Card } from "../components.slint";
+import { QuoteData, StocksState } from "../feeds/state.slint";
+import { FeedScroll, HScroll, LiveDot, PanelHeader, Placeholder, StripHeader, Tone } from "../feeds/common.slint";
+
+/// Intraday line over a soft fill, with the previous close as a faint dotted baseline. Rust draws
+/// the paths in this element's exact aspect ratio (Slint's Path keeps the viewbox's proportions),
+/// so the size is fixed: 60×18 in the Top HUD, 56×26 in the Sidebar.
+component Sparkline {
+    in property <QuoteData> quote;
+    in property <bool> large;
+    property <color> ink: root.quote.up ? Tone.up : Tone.down;
+    width: root.large ? 56px : 60px;
+    height: root.large ? 26px : 18px;
+    // Dots along the baseline (Path has no dash pattern).
+    for i in 12 : Rectangle {
+        x: i * root.width / 12;
+        y: root.quote.baseline * root.height;
+        width: 2px;
+        height: 1px;
+        background: Theme.text3;
+        opacity: 0.6;
+    }
+    if root.quote.has-chart : Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 100;
+        viewbox-height: root.large ? 46 : 30;
+        commands: root.large ? root.quote.row-area : root.quote.area;
+        fill: @linear-gradient(180deg, root.ink.with-alpha(0.28) 0%, root.ink.with-alpha(0) 100%);
+    }
+    if root.quote.has-chart : Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 100;
+        viewbox-height: root.large ? 46 : 30;
+        commands: root.large ? root.quote.row-line : root.quote.line;
+        stroke: root.ink;
+        stroke-width: 1.5px;
+        stroke-line-join: round;
+    }
+}
+
+component ChangePill inherits Rectangle {
+    in property <QuoteData> quote;
+    in property <length> font-size: 12px;
+    width: max(62px, t.preferred-width + 12px);
+    height: root.font-size + 9px;
+    border-radius: 5px;
+    background: root.quote.missing ? Theme.fill : root.quote.up ? Tone.up : Tone.down;
+    t := Text {
+        text: root.quote.missing ? "—" : root.quote.percent;
+        font-size: root.font-size;
+        font-weight: 600;
+        color: root.quote.missing ? Theme.text3 : white;
+    }
+}
+
+/// Top HUD tile: symbol and price on the left, sparkline and change on the right.
+component QuoteTile {
+    in property <QuoteData> quote;
+    accessible-role: button;
+    accessible-label: root.quote.symbol + ", " + root.quote.name + ", "
+        + (root.quote.missing ? "no data" : root.quote.price + ", " + (root.quote.up ? "up " : "down ") + root.quote.percent);
+    accessible-action-default => { StocksState.open-quote(root.quote.url); }
+    property <bool> compact: root.height < 32px;
+    width: 178px;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { StocksState.open-quote(root.quote.url); }
+    }
+    Rectangle {
+        border-radius: 9px;
+        background: ta.has-hover ? Theme.fill-hover : Theme.fill;
+        animate background { duration: 120ms; }
+    }
+    // Shortest Top HUD: one line, symbol · price · change.
+    if root.compact : HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 6px;
+        Text { text: root.quote.symbol; font-size: 12px; font-weight: 700; color: Theme.text; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: 24px; }
+        Text { text: root.quote.missing ? "—" : root.quote.price; font-size: 12px; color: Theme.text2; vertical-alignment: center; horizontal-stretch: 0; }
+        if !root.quote.missing : Text {
+            text: root.quote.percent;
+            font-size: 11px;
+            font-weight: 600;
+            color: root.quote.up ? Tone.up : Tone.down;
+            vertical-alignment: center;
+        }
+    }
+    if !root.compact : HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: space-around;
+            width: 74px;
+            Text { text: root.quote.symbol; font-size: 13px; font-weight: 700; color: Theme.text; overflow: elide; }
+            Text { text: root.quote.missing ? "Unavailable" : root.quote.price; font-size: 12px; color: root.quote.missing ? Theme.text3 : Theme.text2; overflow: elide; }
+        }
+        VerticalLayout {
+            alignment: space-around;
+            HorizontalLayout { alignment: end; Sparkline { quote: root.quote; } }
+            Text {
+                text: root.quote.missing ? "" : root.quote.percent;
+                font-size: 11px;
+                font-weight: 600;
+                color: root.quote.up ? Tone.up : Tone.down;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+/// Sidebar row.
+component QuoteRow {
+    in property <QuoteData> quote;
+    accessible-role: button;
+    accessible-label: root.quote.symbol + ", " + root.quote.name + ", "
+        + (root.quote.missing ? "no data" : root.quote.price + ", " + (root.quote.up ? "up " : "down ") + root.quote.percent);
+    accessible-action-default => { StocksState.open-quote(root.quote.url); }
+    in property <bool> narrow;
+    height: 50px;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { StocksState.open-quote(root.quote.url); }
+    }
+    Rectangle {
+        x: -6px;
+        width: root.width + 12px;
+        border-radius: 8px;
+        background: ta.has-hover ? Theme.fill : transparent;
+        animate background { duration: 120ms; }
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            min-width: 60px;
+            Text { text: root.quote.symbol; font-size: 14px; font-weight: 700; color: Theme.text; overflow: elide; }
+            Text { text: root.quote.name; font-size: 11px; color: Theme.text3; overflow: elide; }
+        }
+        if !root.narrow : Sparkline { quote: root.quote; large: true; y: (parent.height - self.height) / 2; }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            Text { text: root.quote.missing ? "" : root.quote.price; font-size: 13px; font-weight: 600; color: Theme.text; horizontal-alignment: right; }
+            HorizontalLayout { alignment: end; ChangePill { quote: root.quote; font-size: 11px; } }
+        }
+    }
+}
+
+export component StocksStrip inherits Card {
+    property <[QuoteData]> items: StocksState.tab == 0 ? StocksState.watchlist : StocksState.markets;
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 5px;
+        StripHeader { labels: ["Watchlist", "Markets"]; index <=> StocksState.tab; label: StocksState.status; live: false; }
+        if root.items.length > 0 : HScroll {
+            vertical-stretch: 1;
+            content-width: root.items.length * 186px - 8px;
+            for q[i] in root.items : QuoteTile { x: i * 186px; height: parent.height; quote: q; }
+        }
+        if root.items.length == 0 : Placeholder {
+            vertical-stretch: 1;
+            centered: false;
+            text: StocksState.tab == 0 ? StocksState.placeholder : StocksState.markets-placeholder;
+            action: StocksState.tab == 0 ? (StocksState.has-watchlist ? "" : "Add stocks") : (StocksState.has-markets ? "" : "Choose markets");
+            act => { StocksState.customize(); }
+        }
+    }
+}
+
+export component StocksPanel inherits Card {
+    in property <bool> narrow;
+    property <[QuoteData]> items: StocksState.tab == 0 ? StocksState.watchlist : StocksState.markets;
+    VerticalLayout {
+        padding: 16px;
+        padding-bottom: 10px;
+        spacing: 6px;
+        PanelHeader { title: "Stocks"; labels: ["Watchlist", "Markets"]; index <=> StocksState.tab; caption: StocksState.status; }
+        if root.items.length > 0 : FeedScroll {
+            vertical-stretch: 1;
+            min-height: 100px;
+            preferred-height: 200px;
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                alignment: start;
+                for q[i] in root.items : VerticalLayout {
+                    if i > 0 : Rectangle { height: 1px; background: Theme.divider; }
+                    QuoteRow { quote: q; narrow: root.narrow; }
+                }
+            }
+        }
+        if root.items.length == 0 : VerticalLayout {
+            vertical-stretch: 1;
+            alignment: start;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            Placeholder {
+                centered: false;
+                text: StocksState.tab == 0 ? StocksState.placeholder : StocksState.markets-placeholder;
+                action: StocksState.tab == 0 ? (StocksState.has-watchlist ? "" : "Add stocks") : (StocksState.has-markets ? "" : "Choose markets");
+                act => { StocksState.customize(); }
+            }
+        }
+    }
+}

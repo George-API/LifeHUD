@@ -1,0 +1,139 @@
+// A themed context menu (right-click on the music card). It's a small floating window, so the docked
+// HUD can never clip it. Rust places it at the cursor and closes it when focus leaves.
+
+import { Theme } from "theme.slint";
+
+export struct MenuRow {
+    /// 0 entry, 1 section header, 2 separator.
+    kind: int,
+    id: int,
+    text: string,
+    checked: bool,
+    /// A small colour preview before the text (theme menus): `swatch` ring around an `accent` dot.
+    has-swatch: bool,
+    swatch: color,
+    accent: color,
+}
+
+export global MenuState {
+    in property <[MenuRow]> rows;
+    callback chosen(int);
+    callback dismiss();
+    /// The next entry from row `from` in direction `step` (±1), skipping headers and separators.
+    pure callback step(int, int) -> int;
+}
+
+export component MenuWindow inherits Window {
+    title: "Life HUD Menu";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    default-font-family: Theme.font;
+    width: 240px;
+    height: list.preferred-height;
+
+    /// The highlighted entry (pointer or keyboard), or -1.
+    property <int> active: -1;
+
+    Rectangle { background: Theme.hud-tint; }
+    Rectangle { background: Theme.card; }
+
+    keys := FocusScope {
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                MenuState.dismiss();
+                return accept;
+            }
+            if e.text == Key.DownArrow {
+                root.active = MenuState.step(root.active, 1);
+                return accept;
+            }
+            if e.text == Key.UpArrow {
+                root.active = MenuState.step(root.active, -1);
+                return accept;
+            }
+            if (e.text == Key.Return || e.text == " ") && root.active >= 0 {
+                MenuState.chosen(MenuState.rows[root.active].id);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    list := VerticalLayout {
+        padding: 5px;
+        for row[i] in MenuState.rows : Rectangle {
+            height: row.kind == 2 ? 9px : row.kind == 1 ? 24px : 28px;
+
+            if row.kind == 2 : Rectangle {
+                x: 8px;
+                width: parent.width - 16px;
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            if row.kind == 1 : Text {
+                x: 10px;
+                y: 6px;
+                height: parent.height - 6px;
+                text: row.text;
+                font-size: 11px;
+                font-weight: 600;
+                color: Theme.text3;
+                vertical-alignment: center;
+                accessible-role: text;
+            }
+
+            if row.kind == 0 : entry := Rectangle {
+                property <bool> lit: root.active == i;
+                border-radius: 6px;
+                background: self.lit ? Theme.accent : transparent;
+                accessible-role: button;
+                accessible-label: row.text;
+                accessible-action-default => { MenuState.chosen(row.id); }
+
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 10px;
+                    spacing: 6px;
+                    Image {
+                        source: @image-url("icons/check.svg");
+                        width: 12px;
+                        height: 12px;
+                        y: (parent.height - self.height) / 2;
+                        colorize: entry.lit ? Theme.on-accent : Theme.text;
+                        opacity: row.checked ? 1 : 0;
+                    }
+                    if row.has-swatch : Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 7px;
+                        background: row.swatch;
+                        border-width: 1px;
+                        border-color: entry.lit ? Theme.on-accent.with-alpha(0.6) : Theme.card-border;
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: row.accent;
+                        }
+                    }
+                    Text {
+                        text: row.text;
+                        font-size: 13px;
+                        color: entry.lit ? Theme.on-accent : Theme.text;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+                TouchArea {
+                    moved => { root.active = i; }
+                    clicked => { MenuState.chosen(row.id); }
+                }
+            }
+        }
+    }
+
+    init => { keys.focus(); }
+}

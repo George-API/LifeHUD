@@ -9,7 +9,8 @@ component LockTime inherits Text {
     text: HudState.hours + ":" + HudState.minutes;
     font-family: Theme.display-font;
     font-size: root.size;
-    font-weight: 800;
+    // Bold, one step lighter than Black: strong at a glance without looking heavy.
+    font-weight: 700;
     letter-spacing: -0.04 * root.size;
     color: Theme.text.with-alpha(Theme.text.alpha * 0.94);
 }

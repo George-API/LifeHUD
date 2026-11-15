@@ -4,18 +4,45 @@
 slint::include_modules!();
 
 mod app;
+mod chat;
+mod context_menu;
+mod feeds;
 mod locale;
 mod platform;
+mod playlists;
 mod services;
 mod settings;
+#[cfg(debug_assertions)]
+mod snapshot;
+mod stickers;
 mod storage;
 mod tasks;
 mod theme;
+mod volume;
 
 use platform::instance::{self, Signal};
 
 fn main() {
-    let exit_requested = std::env::args().any(|a| a == "--exit");
+    // Developer tool: render widgets offscreen to PNGs (never docks, never touches other windows).
+    #[cfg(debug_assertions)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(i) = args.iter().position(|a| a == "--snapshot") {
+            snapshot::run(&args[i + 1..]);
+            return;
+        }
+    }
+    // Settings → Apps → Uninstall, and install-or-update on a plain launch of a downloaded exe.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--uninstall") {
+        platform::install::uninstall(args.iter().any(|a| a == "--quiet"));
+        return;
+    }
+    if let platform::install::Next::Exit = platform::install::on_launch(&args) {
+        return;
+    }
+
+    let exit_requested = args.iter().any(|a| a == "--exit");
     // A second launch signals the running copy (open Settings, or quit with --exit) and leaves.
     let Some(_instance) = instance::acquire(exit_requested) else { return };
 

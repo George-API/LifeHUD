@@ -1,6 +1,8 @@
-import { Switch, Slider, ComboBox, LineEdit, Button, AboutSlint, Palette, ScrollView } from "std-widgets.slint";
+import { Switch, Slider, AboutSlint, Palette, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { StickerPattern } from "stickers.slint";
+import { Look, Group, Row, OrderButton, Footnote, Segmented, PageTitle, PushButton, PopupSelect, TextField } from "settings-kit.slint";
+import { WidgetLayout, SportsPage, YouTubePage, RedditPage, NetflixPage, StocksPage } from "feeds/settings.slint";
 
 export struct ThemeSwatch {
     id: string,
@@ -16,15 +18,47 @@ export struct ThemeSwatch {
     sticker: int,
 }
 
+export struct PlaylistRow {
+    name: string,
+    uri: string,
+    pinned: bool,
+}
+
+export struct AiProviderRow {
+    /// Which provider this row is (passed back in callbacks).
+    index: int,
+    name: string,
+    vendor: string,
+    has-key: bool,
+    model: string,
+    default-model: string,
+}
+
+/// One widget on the Widgets overview page.
+export struct WidgetTile {
+    id: string,
+    name: string,
+    detail: string,
+    /// Its settings page, or -1 when it has none.
+    page: int,
+    /// "On HUD" or "Not shown" (both layouts show the same widgets).
+    placement: string,
+    shown: bool,
+}
+
 export global SettingsState {
     in-out property <int> page;
+
+    // Widgets overview (page 30) and the sidebar's Widgets group.
+    in property <[WidgetTile]> widget-tiles;
+    in-out property <bool> widgets-open: true;
 
     in-out property <bool> hud-visible: true;
     in-out property <bool> open-at-login;
 
     in-out property <bool> top-layout: true;
     in-out property <bool> fit-windows: true;
-    in-out property <float> size-percent: 8.8;
+    in-out property <float> size-percent: 9;
     in property <float> size-min: 7;
     in property <float> size-max: 18;
     in property <[string]> monitors: ["Display 1"];
@@ -41,9 +75,15 @@ export global SettingsState {
     in-out property <int> units;
 
     in-out property <bool> prefer-spotify: true;
+    in property <[PlaylistRow]> playlists;
+    in-out property <string> playlist-link;
+    in property <string> playlist-error;
+    callback add-playlist(string);
+    callback toggle-pin(string);
+    callback remove-playlist(string);
 
-    in property <[string]> sidebar-names;
-    callback move-card(int, int);
+    /// Restore the default widgets, their order and the HUD size.
+    callback reset-layout();
 
     in property <[string]> curated-sources;
     in-out property <int> curated-index;
@@ -56,162 +96,168 @@ export global SettingsState {
     callback changed(string);
     callback select-theme(string);
     callback open-data-folder();
-}
+    /// Opens one of the project's web pages (Rust allows only the project's own GitHub URLs).
+    callback open-link(string);
 
-global Look {
-    out property <color> window: Theme.dark ? #1e1e20 : #f2f2f7;
-    out property <color> sidebar: Theme.dark ? #26262a : #e8e8ed;
-    out property <color> group: Theme.dark ? #2c2c2e : #ffffff;
-    out property <color> group-border: Theme.dark ? #ffffff0d : #0000000a;
-    out property <color> separator: Theme.dark ? #ffffff14 : #0000001a;
-    out property <color> label: Theme.dark ? #ffffffeb : #000000e0;
-    out property <color> secondary: Theme.dark ? #ffffff8c : #3c3c4399;
-    out property <color> hover: Theme.dark ? #ffffff0f : #0000000a;
+    // AI chat (page 20)
+    in property <[AiProviderRow]> ai-providers;
+    in-out property <bool> ai-button: true;
+    /// A message per provider, by provider index (e.g. a rejected key or model name).
+    in property <[string]> ai-errors: ["", "", ""];
+    callback ai-save-key(int, string);
+    callback ai-remove-key(int);
+    callback ai-set-model(int, string);
+    callback ai-get-key(int);
 }
 
 component SidebarItem {
     in property <string> label;
     in property <image> icon;
-    in property <color> tint;
     in property <bool> selected;
+    /// Nested items (a group's children) sit further in.
+    in property <length> indent: 0;
+    /// A group header shows a disclosure arrow; `expanded` picks its direction.
+    in property <bool> disclosure;
+    in property <bool> expanded;
     callback clicked;
+    callback toggled;
 
     height: 30px;
 
     Rectangle {
         border-radius: 6px;
-        background: root.selected ? Theme.accent : ta.has-hover ? Look.hover : transparent;
+        background: root.selected ? Look.selection : ta.has-hover ? Look.hover : transparent;
     }
+    ta := TouchArea { clicked => { root.clicked(); } }
     HorizontalLayout {
-        padding-left: 8px;
+        padding-left: 8px + root.indent;
+        padding-right: 4px;
         spacing: 9px;
         Rectangle {
             width: 20px;
             height: 20px;
             y: (parent.height - self.height) / 2;
             border-radius: 5px;
-            background: root.tint;
-            Image { source: root.icon; width: 13px; height: 13px; colorize: white; }
+            background: root.selected ? Theme.accent : WidgetLook.tile;
+            animate background { duration: 120ms; }
+            Image { source: root.icon; width: 13px; height: 13px; colorize: root.selected ? Theme.on-accent : WidgetLook.glyph; }
         }
         Text {
             text: root.label;
             font-size: 13px;
-            color: root.selected ? Theme.on-accent : Look.label;
+            color: Look.label;
+            font-weight: root.selected ? 600 : 400;
             vertical-alignment: center;
-        }
-    }
-    ta := TouchArea { clicked => { root.clicked(); } }
-}
-
-component Group inherits Rectangle {
-    background: Look.group;
-    border-radius: 10px;
-    border-width: 1px;
-    border-color: Look.group-border;
-    VerticalLayout {
-        padding-left: 14px;
-        @children
-    }
-}
-
-component Row {
-    in property <string> label;
-    in property <string> detail;
-    in property <bool> last;
-
-    min-height: 44px;
-
-    HorizontalLayout {
-        padding-right: 14px;
-        spacing: 12px;
-        VerticalLayout {
-            alignment: center;
             horizontal-stretch: 1;
-            Text { text: root.label; font-size: 13px; color: Look.label; }
-            if root.detail != "" : Text { text: root.detail; font-size: 11px; color: Look.secondary; wrap: word-wrap; }
         }
-        HorizontalLayout {
-            alignment: end;
-            horizontal-stretch: 0;
-            @children
+        // Its own hit area: the arrow folds the group, the rest of the row opens its page.
+        if root.disclosure : Rectangle {
+            width: 22px;
+            height: 22px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 5px;
+            background: arrow.has-hover ? Look.hover : transparent;
+            Image {
+                source: root.expanded ? @image-url("icons/chevron-down.svg") : @image-url("icons/chevron-right.svg");
+                width: 11px;
+                height: 11px;
+                colorize: Look.secondary;
+            }
+            arrow := TouchArea { clicked => { root.toggled(); } }
         }
-    }
-    if !root.last : Rectangle {
-        y: root.height - 1px;
-        height: 1px;
-        background: Look.separator;
     }
 }
 
-component OrderButton {
-    in property <image> icon;
-    in property <bool> enabled: true;
-    callback clicked;
-    width: 28px;
-    height: 28px;
-    Rectangle {
-        border-radius: 6px;
-        background: ta.has-hover && root.enabled ? Look.hover : transparent;
+/// Settings page icon for each widget, and the shared icon-tile colours, used by the sidebar and the
+/// Widgets overview.
+global WidgetLook {
+    pure public function icon(id: string) -> image {
+        return id == "weather" ? @image-url("icons/cloud.svg")
+            : id == "music" ? @image-url("icons/music.svg")
+            : id == "today" ? @image-url("icons/check.svg")
+            : id == "news" ? @image-url("icons/newspaper.svg")
+            : id == "sports" ? @image-url("icons/sports.svg")
+            : id == "youtube" ? @image-url("icons/youtube.svg")
+            : id == "reddit" ? @image-url("icons/reddit.svg")
+            : id == "netflix" ? @image-url("icons/netflix.svg")
+            : id == "stocks" ? @image-url("icons/stocks.svg")
+            : @image-url("icons/sparkle.svg");
     }
-    Image {
-        source: root.icon;
-        width: 15px;
-        height: 15px;
-        colorize: root.enabled ? Look.label : Look.secondary;
-        opacity: root.enabled ? 1 : 0.35;
+    /// Icon tiles are one neutral grey, so the sidebar stays calm; the accent marks the current page.
+    out property <color> tile: Theme.dark ? #ffffff1a : #0000000f;
+    out property <color> glyph: Theme.dark ? #ffffffcc : #3c3c43d9;
+}
+
+/// A widget on the Widgets overview: what it is, where it's placed, and a way into its settings.
+component WidgetCard {
+    in property <WidgetTile> tile;
+    callback clicked;
+
+    property <bool> link: root.tile.page >= 0;
+
+    Rectangle {
+        background: ta.has-hover && root.link ? Look.hover : Look.group;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Look.group-border;
     }
     ta := TouchArea {
-        enabled: root.enabled;
+        enabled: root.link;
+        mouse-cursor: root.link ? pointer : default;
         clicked => { root.clicked(); }
     }
-}
-
-component Footnote inherits Text {
-    font-size: 11px;
-    color: Look.secondary;
-    wrap: word-wrap;
-}
-
-component Segmented {
-    in property <[string]> items;
-    in-out property <int> index;
-    in property <bool> enabled: true;
-    callback changed(int);
-
-    height: 26px;
-    min-width: root.items.length * 66px;
-    opacity: root.enabled ? 1 : 0.4;
-
-    Rectangle {
-        border-radius: 7px;
-        background: Theme.dark ? #ffffff17 : #7676801f;
-    }
-    Rectangle {
-        x: 2px + root.index * (root.width - 4px) / max(1, root.items.length);
-        y: 2px;
-        width: (root.width - 4px) / max(1, root.items.length);
-        height: root.height - 4px;
-        border-radius: 6px;
-        background: Theme.dark ? #636366 : #ffffff;
-        drop-shadow-blur: 2px;
-        drop-shadow-offset-y: 1px;
-        drop-shadow-color: #00000026;
-        animate x { duration: 200ms; easing: ease-out; }
-    }
-    HorizontalLayout {
-        padding: 2px;
-        for item[i] in root.items : Rectangle {
-            Text {
-                text: item;
-                font-size: 12px;
-                font-weight: i == root.index ? 600 : 400;
-                color: Look.label;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 26px;
+                height: 26px;
+                border-radius: 6px;
+                background: WidgetLook.tile;
+                Image { source: WidgetLook.icon(root.tile.id); width: 16px; height: 16px; colorize: WidgetLook.glyph; }
             }
-            TouchArea {
-                enabled: root.enabled;
-                clicked => {
-                    root.index = i;
-                    root.changed(i);
+            Text {
+                text: root.tile.name;
+                font-size: 13px;
+                font-weight: 600;
+                color: Look.label;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if root.link : Image {
+                source: @image-url("icons/chevron-right.svg");
+                width: 10px;
+                height: 10px;
+                y: (parent.height - self.height) / 2;
+                colorize: Look.secondary;
+            }
+        }
+        Text {
+            text: root.tile.detail;
+            font-size: 11px;
+            color: Look.secondary;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+        HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                height: 18px;
+                border-radius: 9px;
+                background: root.tile.shown ? Theme.accent.with-alpha(0.16) : Look.hover;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Text {
+                        text: root.tile.placement;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: root.tile.shown ? Theme.accent : Look.secondary;
+                        vertical-alignment: center;
+                    }
                 }
             }
         }
@@ -281,7 +327,8 @@ component Swatch {
                 background: root.swatch.surface;
                 clip: true;
                 Rectangle { background: @linear-gradient(135deg, root.swatch.ambient-a 0%, root.swatch.ambient-b 50%, root.swatch.ambient-c 100%); }
-                if root.swatch.sticker > 0 : StickerPattern { width: parent.width; height: parent.height; set: root.swatch.sticker; ink: root.swatch.text; strength: 0.16; }
+                // Centred: shows the composed motif cluster at the middle of each theme's tile.
+                if root.swatch.sticker > 0 : StickerPattern { width: parent.width; height: parent.height; set: root.swatch.sticker; ink: root.swatch.text; strength: 0.22; horizontal-alignment: center; vertical-alignment: center; }
                 Text {
                     y: 6px;
                     text: "9:41";
@@ -308,18 +355,12 @@ component Swatch {
         }
         Text {
             text: root.swatch.name;
-            font-size: 11.5px;
+            font-size: 12px;
             color: Look.label;
             horizontal-alignment: center;
         }
     }
     TouchArea { clicked => { root.clicked(); } }
-}
-
-component PageTitle inherits Text {
-    font-size: 22px;
-    font-weight: 700;
-    color: Look.label;
 }
 
 export component SettingsWindow inherits Window {
@@ -328,13 +369,22 @@ export component SettingsWindow inherits Window {
     preferred-width: 780px;
     preferred-height: 560px;
     min-width: 680px;
-    min-height: 460px;
+    min-height: 540px;
     background: Look.window;
-    default-font-family: Theme.font;
+    default-font-family: Look.font;
 
     property <bool> dark: Theme.dark;
     init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
     changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    // Arriving on a widget's page from elsewhere (the weather card, the music menu) unfolds the
+    // Widgets group so the selected item is visible.
+    property <int> page: SettingsState.page;
+    changed page => {
+        if (page >= 3 && page <= 5) || (page >= 7 && page <= 11) {
+            SettingsState.widgets-open = true;
+        }
+    }
 
     HorizontalLayout {
         // ------------------------------------------------ Sidebar
@@ -353,13 +403,33 @@ export component SettingsWindow inherits Window {
                     Image { source: @image-url("../assets/icon.png"); width: 28px; height: 28px; }
                     Text { text: "Life HUD"; font-size: 15px; font-weight: 600; color: Look.label; vertical-alignment: center; }
                 }
-                SidebarItem { label: "General"; icon: @image-url("icons/gear.svg"); tint: #8e8e93; selected: SettingsState.page == 0; clicked => { SettingsState.page = 0; } }
-                SidebarItem { label: "Layout"; icon: @image-url("icons/sidebar-left.svg"); tint: #0a84ff; selected: SettingsState.page == 1; clicked => { SettingsState.page = 1; } }
-                SidebarItem { label: "Appearance"; icon: @image-url("icons/paintbrush.svg"); tint: #5e5ce6; selected: SettingsState.page == 2; clicked => { SettingsState.page = 2; } }
-                SidebarItem { label: "Weather"; icon: @image-url("icons/cloud.svg"); tint: #32ade6; selected: SettingsState.page == 3; clicked => { SettingsState.page = 3; } }
-                SidebarItem { label: "Music"; icon: @image-url("icons/music.svg"); tint: #ff375f; selected: SettingsState.page == 4; clicked => { SettingsState.page = 4; } }
-                SidebarItem { label: "News"; icon: @image-url("icons/newspaper.svg"); tint: #ff9f0a; selected: SettingsState.page == 5; clicked => { SettingsState.page = 5; } }
-                SidebarItem { label: "About"; icon: @image-url("icons/info.svg"); tint: #8e8e93; selected: SettingsState.page == 6; clicked => { SettingsState.page = 6; } }
+                SidebarItem { label: "General"; icon: @image-url("icons/gear.svg"); selected: SettingsState.page == 0; clicked => { SettingsState.page = 0; } }
+                SidebarItem { label: "Layout"; icon: @image-url("icons/sidebar-left.svg"); selected: SettingsState.page == 1; clicked => { SettingsState.page = 1; } }
+                SidebarItem { label: "Appearance"; icon: @image-url("icons/paintbrush.svg"); selected: SettingsState.page == 2; clicked => { SettingsState.page = 2; } }
+                // Widgets: the overview, with each widget's settings nested beneath it.
+                SidebarItem {
+                    label: "Widgets";
+                    icon: @image-url("icons/widgets.svg");
+                    selected: SettingsState.page == 30;
+                    disclosure: true;
+                    expanded: SettingsState.widgets-open;
+                    clicked => { SettingsState.page = 30; SettingsState.widgets-open = true; }
+                    toggled => { SettingsState.widgets-open = !SettingsState.widgets-open; }
+                }
+                if SettingsState.widgets-open : VerticalLayout {
+                    spacing: 2px;
+                    SidebarItem { indent: 14px; label: "Weather"; icon: WidgetLook.icon("weather"); selected: SettingsState.page == 3; clicked => { SettingsState.page = 3; } }
+                    SidebarItem { indent: 14px; label: "Music"; icon: WidgetLook.icon("music"); selected: SettingsState.page == 4; clicked => { SettingsState.page = 4; } }
+                    SidebarItem { indent: 14px; label: "News"; icon: WidgetLook.icon("news"); selected: SettingsState.page == 5; clicked => { SettingsState.page = 5; } }
+                    SidebarItem { indent: 14px; label: "Sports"; icon: WidgetLook.icon("sports"); selected: SettingsState.page == 7; clicked => { SettingsState.page = 7; } }
+                    SidebarItem { indent: 14px; label: "YouTube"; icon: WidgetLook.icon("youtube"); selected: SettingsState.page == 8; clicked => { SettingsState.page = 8; } }
+                    SidebarItem { indent: 14px; label: "Reddit"; icon: WidgetLook.icon("reddit"); selected: SettingsState.page == 9; clicked => { SettingsState.page = 9; } }
+                    SidebarItem { indent: 14px; label: "Netflix"; icon: WidgetLook.icon("netflix"); selected: SettingsState.page == 10; clicked => { SettingsState.page = 10; } }
+                    SidebarItem { indent: 14px; label: "Stocks"; icon: WidgetLook.icon("stocks"); selected: SettingsState.page == 11; clicked => { SettingsState.page = 11; } }
+                }
+                Rectangle { height: 6px; }
+                SidebarItem { label: "Search & AI"; icon: @image-url("icons/search.svg"); selected: SettingsState.page == 20; clicked => { SettingsState.page = 20; } }
+                SidebarItem { label: "About"; icon: @image-url("icons/info.svg"); selected: SettingsState.page == 6; clicked => { SettingsState.page = 6; } }
             }
         }
 
@@ -378,10 +448,12 @@ export component SettingsWindow inherits Window {
                     Group {
                         Row {
                             label: "Show Life HUD";
+                            detail: "You can also show or hide it from the tray icon.";
                             Switch { checked <=> SettingsState.hud-visible; toggled => { SettingsState.changed("visibility"); } }
                         }
                         Row {
                             label: "Open at login";
+                            detail: "Start Life HUD when you sign in to Windows.";
                             last: true;
                             Switch { checked <=> SettingsState.open-at-login; toggled => { SettingsState.changed("startup"); } }
                         }
@@ -391,7 +463,7 @@ export component SettingsWindow inherits Window {
                             label: "Your data";
                             detail: "Notes, tasks and settings stay on this PC.";
                             last: true;
-                            Button { text: "Show in Explorer"; clicked => { SettingsState.open-data-folder(); } }
+                            PushButton { text: "Show in Explorer"; clicked => { SettingsState.open-data-folder(); } }
                         }
                     }
                 }
@@ -403,7 +475,7 @@ export component SettingsWindow inherits Window {
                     HorizontalLayout {
                         spacing: 16px;
                         LayoutTile {
-                            label: "Top";
+                            label: "Top HUD";
                             top: true;
                             selected: SettingsState.top-layout;
                             clicked => { SettingsState.top-layout = true; SettingsState.changed("layout"); }
@@ -419,6 +491,7 @@ export component SettingsWindow inherits Window {
                     Group {
                         Row {
                             label: "Size";
+                            detail: SettingsState.top-layout ? "How much of the screen's height the bar uses." : "How much of the screen's width the Sidebar uses.";
                             Slider {
                                 width: 200px;
                                 minimum: SettingsState.size-min;
@@ -443,7 +516,7 @@ export component SettingsWindow inherits Window {
                         Row {
                             label: "Display";
                             last: true;
-                            ComboBox {
+                            PopupSelect {
                                 width: 220px;
                                 model: SettingsState.monitors;
                                 current-index <=> SettingsState.monitor-index;
@@ -451,20 +524,37 @@ export component SettingsWindow inherits Window {
                             }
                         }
                     }
-                    Text { text: "Sidebar order"; font-size: 13px; font-weight: 600; color: Look.label; }
                     Group {
-                        for name[i] in SettingsState.sidebar-names : Row {
-                            label: name;
-                            last: i == SettingsState.sidebar-names.length - 1;
-                            OrderButton {
-                                icon: @image-url("icons/chevron-up.svg");
-                                enabled: i > 0;
-                                clicked => { SettingsState.move-card(i, -1); }
+                        Row {
+                            label: "Widgets";
+                            detail: "Choose what the Top HUD and Sidebar show.";
+                            PushButton {
+                                text: "Choose Widgets…";
+                                clicked => { SettingsState.page = 30; SettingsState.widgets-open = true; }
                             }
-                            OrderButton {
-                                icon: @image-url("icons/chevron-down.svg");
-                                enabled: i < SettingsState.sidebar-names.length - 1;
-                                clicked => { SettingsState.move-card(i, 1); }
+                        }
+                        Row {
+                            label: "Reset layout";
+                            detail: "Restore the default widgets, their order and the HUD size.";
+                            last: true;
+                            // Two clicks, so a stray one can't undo a carefully arranged layout.
+                            reset := PushButton {
+                                destructive: true;
+                                property <bool> armed;
+                                text: self.armed ? "Click again to reset" : "Reset to Default";
+                                clicked => {
+                                    if self.armed {
+                                        self.armed = false;
+                                        SettingsState.reset-layout();
+                                    } else {
+                                        self.armed = true;
+                                    }
+                                }
+                            }
+                            Timer {
+                                interval: 4s;
+                                running: reset.armed;
+                                triggered => { reset.armed = false; }
                             }
                         }
                     }
@@ -474,6 +564,7 @@ export component SettingsWindow inherits Window {
                 if SettingsState.page == 2 : VerticalLayout {
                     spacing: 12px;
                     PageTitle { text: "Appearance"; }
+                    Text { text: "Theme"; font-size: 13px; font-weight: 600; color: Look.label; }
                     Rectangle {
                         property <int> columns: 4;
                         property <length> cell-gap: 12px;
@@ -491,8 +582,9 @@ export component SettingsWindow inherits Window {
                     }
                     Group {
                         Row {
-                            label: "Mode";
-                            detail: SettingsState.appearance-enabled ? "" : "Set by the theme.";
+                            label: "Light or dark";
+                            detail: SettingsState.appearance-enabled ? "Auto follows Windows." : "Only Classic switches between light and dark. Other themes have their own look.";
+                            last: true;
                             Segmented {
                                 width: 220px;
                                 items: ["Auto", "Light", "Dark"];
@@ -501,6 +593,9 @@ export component SettingsWindow inherits Window {
                                 changed => { SettingsState.changed("theme"); }
                             }
                         }
+                    }
+                    Text { text: "Clock"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Group {
                         Row {
                             label: "24-hour time";
                             Switch { checked <=> SettingsState.use-24h; toggled => { SettingsState.changed("clock"); } }
@@ -520,9 +615,10 @@ export component SettingsWindow inherits Window {
                     Group {
                         Row {
                             label: "Location";
-                            LineEdit {
+                            detail: "Leave blank to use this PC's location. Type a city and press Enter.";
+                            TextField {
                                 width: 220px;
-                                placeholder-text: "Current Location";
+                                placeholder-text: "This PC's location";
                                 text <=> SettingsState.city;
                                 accepted => { SettingsState.changed("weather"); }
                             }
@@ -538,7 +634,7 @@ export component SettingsWindow inherits Window {
                             }
                         }
                     }
-                    Footnote { text: SettingsState.weather-status; }
+                    if SettingsState.weather-status != "" : Footnote { text: SettingsState.weather-status; }
                 }
 
                 // Music
@@ -554,37 +650,150 @@ export component SettingsWindow inherits Window {
                         }
                     }
                     Footnote { text: "Works with the Spotify desktop app. No sign-in needed."; }
+                    Text { text: "Playlists"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Group {
+                        for p in SettingsState.playlists : Row {
+                            label: p.name;
+                            OrderButton {
+                                icon: p.pinned ? @image-url("icons/pin-fill.svg") : @image-url("icons/pin.svg");
+                                active: p.pinned;
+                                clicked => { SettingsState.toggle-pin(p.uri); }
+                            }
+                            OrderButton {
+                                icon: @image-url("icons/trash.svg");
+                                clicked => { SettingsState.remove-playlist(p.uri); }
+                            }
+                        }
+                        Row {
+                            label: SettingsState.playlists.length == 0 ? "Add a playlist" : "Add another";
+                            last: true;
+                            TextField {
+                                width: 240px;
+                                placeholder-text: "Paste a Spotify link";
+                                text <=> SettingsState.playlist-link;
+                                accepted => { SettingsState.add-playlist(self.text); }
+                            }
+                            PushButton { text: "Add"; clicked => { SettingsState.add-playlist(SettingsState.playlist-link); } }
+                        }
+                    }
+                    Footnote {
+                        text: SettingsState.playlist-error != "" ? SettingsState.playlist-error
+                            : "Right-click the music widget to open these in Spotify. Pinned ones sit at the top. In Spotify, use Share → Copy link to get a playlist, album, artist or podcast link.";
+                    }
                 }
 
                 // News
                 if SettingsState.page == 5 : VerticalLayout {
                     spacing: 12px;
                     PageTitle { text: "News"; }
-                    Text { text: "Curated"; font-size: 13px; font-weight: 600; color: Look.label; }
                     Group {
-                        for source[i] in SettingsState.curated-sources : Rectangle {
-                            Row {
-                                label: source;
-                                last: i == SettingsState.curated-sources.length - 1;
-                                Image { source: @image-url("icons/check.svg"); width: 16px; height: 16px; colorize: Theme.accent; opacity: i == SettingsState.curated-index ? 1 : 0; }
+                        Row {
+                            label: "Curated tab";
+                            detail: "Technology and science.";
+                            PopupSelect {
+                                width: 220px;
+                                model: SettingsState.curated-sources;
+                                current-index <=> SettingsState.curated-index;
+                                selected => { SettingsState.changed("news"); }
                             }
-                            TouchArea { clicked => { SettingsState.curated-index = i; SettingsState.changed("news"); } }
                         }
-                    }
-                    Rectangle { height: 6px; }
-                    Text { text: "Top News"; font-size: 13px; font-weight: 600; color: Look.label; }
-                    Group {
-                        for source[i] in SettingsState.top-sources : Rectangle {
-                            Row {
-                                label: source;
-                                last: i == SettingsState.top-sources.length - 1;
-                                Image { source: @image-url("icons/check.svg"); width: 16px; height: 16px; colorize: Theme.accent; opacity: i == SettingsState.top-index ? 1 : 0; }
+                        Row {
+                            label: "Top tab";
+                            detail: "General headlines for your region.";
+                            last: true;
+                            PopupSelect {
+                                width: 220px;
+                                model: SettingsState.top-sources;
+                                current-index <=> SettingsState.top-index;
+                                selected => { SettingsState.changed("news"); }
                             }
-                            TouchArea { clicked => { SettingsState.top-index = i; SettingsState.changed("news"); } }
                         }
                     }
                     Footnote { text: "Headlines come from each publisher's free public feed and open in your browser."; }
                 }
+                // AI chat
+                // Widgets overview: every widget at a glance, then where each one goes.
+                if SettingsState.page == 30 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "Widgets"; }
+                    // Placement first: there's only so much room, so arranging is the main job here.
+                    WidgetLayout { }
+                    Rectangle { height: 6px; }
+                    Text { text: "All widgets"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Footnote { text: "Open a widget to set it up."; }
+                    grid := Rectangle {
+                        property <int> columns: self.width >= 520px ? 3 : 2;
+                        property <length> gap: 10px;
+                        property <length> card-width: (self.width - (self.columns - 1) * self.gap) / self.columns;
+                        property <length> card-height: 108px;
+                        height: ceil(SettingsState.widget-tiles.length / self.columns) * (self.card-height + self.gap) - self.gap;
+                        for tile[i] in SettingsState.widget-tiles : WidgetCard {
+                            x: mod(i, grid.columns) * (grid.card-width + grid.gap);
+                            y: floor(i / grid.columns) * (grid.card-height + grid.gap);
+                            width: grid.card-width;
+                            height: grid.card-height;
+                            tile: tile;
+                            clicked => { SettingsState.page = tile.page; }
+                        }
+                    }
+                }
+
+                if SettingsState.page == 7 : SportsPage { }
+                if SettingsState.page == 8 : YouTubePage { }
+                if SettingsState.page == 9 : RedditPage { }
+                if SettingsState.page == 10 : NetflixPage { }
+                if SettingsState.page == 11 : StocksPage { }
+                if SettingsState.page == 20 : VerticalLayout {
+                    spacing: 12px;
+                    PageTitle { text: "Search & AI"; }
+                    Group {
+                        Row {
+                            label: "Show search button";
+                            detail: "Adds a magnifying glass to the HUD that opens Google search and the AI chat. Search needs no key.";
+                            last: true;
+                            Switch { checked <=> SettingsState.ai-button; toggled => { SettingsState.changed("ai"); } }
+                        }
+                    }
+                    for p in SettingsState.ai-providers : VerticalLayout {
+                        spacing: 8px;
+                        Text { text: p.name; font-size: 13px; font-weight: 600; color: Look.label; }
+                        Group {
+                            if p.has-key : Row {
+                                label: p.vendor + " API key";
+                                detail: "Saved in Windows Credential Manager.";
+                                PushButton { text: "Remove"; destructive: true; clicked => { SettingsState.ai-remove-key(p.index); } }
+                            }
+                            if !p.has-key : Row {
+                                label: p.vendor + " API key";
+                                key := TextField {
+                                    width: 200px;
+                                    input-type: password;
+                                    placeholder-text: "Paste your key";
+                                    accepted => { SettingsState.ai-save-key(p.index, self.text); }
+                                }
+                                PushButton { text: "Save"; primary: true; clicked => { SettingsState.ai-save-key(p.index, key.text); } }
+                            }
+                            Row {
+                                label: "Model";
+                                detail: "Default: " + p.default-model;
+                                last: true;
+                                TextField {
+                                    width: 200px;
+                                    text: p.model;
+                                    placeholder-text: p.default-model;
+                                    accepted => { SettingsState.ai-set-model(p.index, self.text); }
+                                    edited => { SettingsState.ai-set-model(p.index, self.text); }
+                                }
+                                PushButton { text: "Get a key"; clicked => { SettingsState.ai-get-key(p.index); } }
+                            }
+                        }
+                        if SettingsState.ai-errors[p.index] != "" : Footnote { text: SettingsState.ai-errors[p.index]; }
+                    }
+                    Footnote {
+                        text: "Google search opens in your browser and needs no setup. The AI tabs are optional: bring your own API key from Anthropic, OpenAI or Google; usage is billed to that account. Your messages go straight from this PC to the provider you pick. Life HUD doesn't save conversations; they're cleared when it quits. Keys are kept in Windows Credential Manager, never in Life HUD's files.";
+                    }
+                }
+
                 // About
                 if SettingsState.page == 6 : VerticalLayout {
                     spacing: 6px;
@@ -597,6 +806,13 @@ export component SettingsWindow inherits Window {
                     Text { text: "Life HUD"; font-size: 20px; font-weight: 700; color: Look.label; horizontal-alignment: center; }
                     Text { text: "Version " + SettingsState.version; font-size: 12px; color: Look.secondary; horizontal-alignment: center; }
                     Text { text: "Open source under the MIT License."; font-size: 12px; color: Look.secondary; horizontal-alignment: center; }
+                    Rectangle { height: 8px; }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        PushButton { text: "View on GitHub"; clicked => { SettingsState.open-link("https://github.com/George-API/LifeHUD"); } }
+                        PushButton { text: "Report a Problem"; clicked => { SettingsState.open-link("https://github.com/George-API/LifeHUD/issues/new/choose"); } }
+                    }
                     Rectangle { height: 18px; }
                     HorizontalLayout {
                         alignment: center;
