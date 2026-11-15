@@ -2439,7 +2439,7 @@ dependencies = [
 
 [[package]]
 name = "lifehud"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "quick-xml 0.42.0",
  "raw-window-handle",

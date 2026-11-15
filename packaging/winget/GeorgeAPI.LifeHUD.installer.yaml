@@ -2,7 +2,7 @@
 # lifehud.exe installs itself per user when run with --install (see src/platform/install.rs) and
 # registers the "LifeHUD" entry in Settings > Apps, which winget uses to track and uninstall it.
 PackageIdentifier: GeorgeAPI.LifeHUD
-PackageVersion: 1.0.0
+PackageVersion: 1.0.1
 InstallerType: exe
 Scope: user
 InstallModes:
@@ -16,7 +16,7 @@ ProductCode: LifeHUD
 MinimumOSVersion: 10.0.19041.0
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/George-API/LifeHUD/releases/download/v1.0.0/lifehud.exe
+    InstallerUrl: https://github.com/George-API/LifeHUD/releases/download/v1.0.1/lifehud.exe
     InstallerSha256: REPLACE_WITH_SHA256_FROM_THE_RELEASE
 AppsAndFeaturesEntries:
   - DisplayName: Life HUD
