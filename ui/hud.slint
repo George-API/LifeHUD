@@ -151,12 +151,14 @@ export component HudWindow inherits Window {
         property <length> clock-width: EditState.editing ? min(600px, root.width * 0.42) : 250px;
         property <length> side-width: (root.width - self.clock-width) / 2 - root.pad;
         property <length> inner-height: root.height - 2 * root.pad;
-        /// One width for every card on both sides, sized by the busier side, so the halves match.
-        /// Both sides reserve room for the Chrome buttons so a card on the left equals one on the right.
-        property <int> per-side: max(1, max(Slots.left.length, Slots.right.length));
+        /// Each side's cards share that whole side, so both halves always fill out to the clock even
+        /// when one side holds fewer cards (e.g. three widgets: two on one side, one on the other).
+        /// Both sides reserve room for the Chrome buttons so the halves stay the same width.
         property <length> card-avail: self.side-width - 34px - root.gap;
-        property <length> card-w: max(0px, (self.card-avail - (self.per-side - 1) * root.gap) / self.per-side);
-        property <bool> compact: self.card-w < 470px;
+        property <int> left-n: max(1, Slots.left.length);
+        property <int> right-n: max(1, Slots.right.length);
+        property <length> left-w: max(0px, (self.card-avail - (self.left-n - 1) * root.gap) / self.left-n);
+        property <length> right-w: max(0px, (self.card-avail - (self.right-n - 1) * root.gap) / self.right-n);
 
         Rectangle {
             y: root.height - 1px;
@@ -179,10 +181,10 @@ export component HudWindow inherits Window {
                 property <bool> after: drag.px >= self.ax + self.width / 2;
                 changed hot => { if self.hot { root.claim(self.index, self.after); } else { root.unclaim(self.index); } }
                 changed after => { if self.hot { root.claim(self.index, self.after); } }
-                width: top.card-w;
+                width: top.left-w;
                 horizontal-stretch: 0;
 
-                TopCell { kind: kind; compact: top.compact; w: top.card-w; }
+                TopCell { kind: kind; compact: top.left-w < 470px; w: top.left-w; }
                 if EditState.editing : EditOutline {
                     x: 0;
                     y: 0;
@@ -211,7 +213,7 @@ export component HudWindow inherits Window {
                     vertical: true;
                 }
             }
-            // Takes the slack when this side has fewer cards than the other.
+            // Keeps this side's cards clear of the clock by the room the right side gives the Chrome buttons.
             Rectangle { horizontal-stretch: 0.001; }
         }
 
@@ -270,10 +272,10 @@ export component HudWindow inherits Window {
                 property <bool> after: drag.px >= self.ax + self.width / 2;
                 changed hot => { if self.hot { root.claim(self.index, self.after); } else { root.unclaim(self.index); } }
                 changed after => { if self.hot { root.claim(self.index, self.after); } }
-                width: top.card-w;
+                width: top.right-w;
                 horizontal-stretch: 0;
 
-                TopCell { kind: kind; compact: top.compact; w: top.card-w; }
+                TopCell { kind: kind; compact: top.right-w < 470px; w: top.right-w; }
                 if EditState.editing : EditOutline {
                     x: 0;
                     y: 0;
