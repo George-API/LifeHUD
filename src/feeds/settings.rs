@@ -115,15 +115,16 @@ pub fn sidebar_layout(order: &[String], height: f32) -> Vec<Placed> {
 
 /// The Sidebar's size on the chosen display, in DIPs (width, height).
 fn sidebar_size(s: &Settings) -> (f32, f32) {
+    use crate::settings::{MAX_SIDE_DIP, MAX_TOP_DIP, MIN_SIDE_DIP, MIN_TOP_DIP};
     let Some(m) = crate::platform::monitors::find(s.monitor.as_deref()) else { return (340.0, 1040.0) };
     let (mw, mh) = ((m.bounds.right - m.bounds.left) as f32, (m.bounds.bottom - m.bounds.top) as f32);
     let mut h = (m.work_area.bottom - m.work_area.top) as f32;
     if s.layout == crate::settings::Layout::Top {
         // The Top HUD's own reservation would come back to the Sidebar.
-        h += (mh * s.top_size_percent / 100.0).clamp(76.0 * m.scale, 200.0 * m.scale);
+        h += (mh * s.top_size_percent / 100.0).clamp(MIN_TOP_DIP * m.scale, MAX_TOP_DIP * m.scale);
         h = h.min(mh);
     }
-    let w = (mw * s.side_size_percent / 100.0).clamp(248.0 * m.scale, 560.0 * m.scale);
+    let w = (mw * s.side_size_percent / 100.0).clamp(MIN_SIDE_DIP * m.scale, MAX_SIDE_DIP * m.scale);
     (w / m.scale, h / m.scale)
 }
 

@@ -30,10 +30,17 @@ use crate::{
 use crate::{locale, storage, theme};
 
 const NOTES_FILE: &str = "notes.md";
-const MIN_TOP_DIP: f32 = 76.0;
-const MAX_TOP_DIP: f32 = 200.0;
-const MIN_SIDE_DIP: f32 = 248.0;
-const MAX_SIDE_DIP: f32 = 560.0;
+/// Beyond this the HUD stops editing the notes in place: a text box that lays out every line of a
+/// huge note makes each repaint slow enough to freeze the HUD. The text is never cut; it's left in
+/// notes.md for a real editor.
+const MAX_NOTE_LINES: usize = 10_000;
+const MAX_NOTE_BYTES: usize = 1_000_000;
+
+/// Whether `text` is small enough to edit on the HUD.
+fn notes_fit(text: &str) -> bool {
+    text.len() <= MAX_NOTE_BYTES && text.lines().count() <= MAX_NOTE_LINES
+}
+use crate::settings::{MAX_SIDE_DIP, MAX_TOP_DIP, MIN_SIDE_DIP, MIN_TOP_DIP};
 
 thread_local! {
     static APP: RefCell<Weak<App>> = const { RefCell::new(Weak::new()) };
@@ -80,6 +87,9 @@ pub struct App {
     /// Edit Widgets: the widget list before each change, newest last.
     edit_undo: RefCell<Vec<Vec<String>>>,
     notes_status_timer: Timer,
+    /// While the notes are too long for the HUD: watches notes.md so the editor comes back once
+    /// they've been trimmed elsewhere.
+    notes_watch: Timer,
     display_timer: Timer,
     /// The layout fold in progress, if any.
     morph: RefCell<Option<Morph>>,
@@ -120,6 +130,7 @@ impl App {
             notes_timer: Timer::default(),
             edit_undo: RefCell::new(Vec::new()),
             notes_status_timer: Timer::default(),
+            notes_watch: Timer::default(),
             display_timer: Timer::default(),
             morph: RefCell::new(None),
             feeds,
@@ -264,11 +275,22 @@ impl App {
             a.tasks_changed();
         }));
 
+        state.on_open_notes(|| {
+            crate::platform::shell_open(&storage::path(NOTES_FILE).to_string_lossy());
+        });
+
         // Notes: auto-save shortly after typing stops.
         {
             let w = w.clone();
-            state.on_notes_edited(move |_| {
+            state.on_notes_edited(move |text| {
                 let Some(a) = w.upgrade() else { return };
+                if !notes_fit(&text) {
+                    // A huge paste: keep every character in notes.md, then step aside.
+                    a.notes_timer.stop();
+                    storage::write_atomic(NOTES_FILE, text.as_bytes());
+                    a.show_notes_too_long(&text);
+                    return;
+                }
                 let w2 = Rc::downgrade(&a);
                 a.notes_timer.start(TimerMode::SingleShot, Duration::from_millis(600), move || {
                     if let Some(a) = w2.upgrade() {
@@ -806,8 +828,40 @@ impl App {
 
     fn load_notes(&self) {
         let text = storage::read_text(NOTES_FILE).unwrap_or_default();
-        self.hud.global::<HudState>().set_notes(text.into());
+        if !notes_fit(&text) {
+            self.show_notes_too_long(&text);
+            return;
+        }
+        let state = self.hud.global::<HudState>();
+        state.set_notes_too_long(false);
+        state.set_notes(text.into());
         self.update_word_count();
+    }
+
+    /// Swaps the editor for "too long to edit here", and checks notes.md every few seconds so the
+    /// editor comes back once the user has trimmed them. The HUD never writes notes.md meanwhile.
+    fn show_notes_too_long(&self, text: &str) {
+        let state = self.hud.global::<HudState>();
+        let lines = text.lines().count();
+        state.set_notes_size(if lines > MAX_NOTE_LINES {
+            format!("{lines} lines").into()
+        } else {
+            format!("{:.1} MB", text.len() as f64 / 1_000_000.0).into()
+        });
+        state.set_notes(SharedString::new());
+        state.set_notes_too_long(true);
+        state.set_word_count(SharedString::new());
+        let w = APP.with(|a| a.borrow().clone());
+        let seen = std::fs::metadata(storage::path(NOTES_FILE)).and_then(|m| m.modified()).ok();
+        self.notes_watch.start(TimerMode::Repeated, Duration::from_secs(3), move || {
+            let now = std::fs::metadata(storage::path(NOTES_FILE)).and_then(|m| m.modified()).ok();
+            if now != seen
+                && let Some(a) = w.upgrade()
+            {
+                a.notes_watch.stop();
+                a.load_notes();
+            }
+        });
     }
 
     fn update_word_count(&self) {
@@ -821,6 +875,10 @@ impl App {
     }
 
     fn flush_notes(&self) {
+        // The editor is empty while the notes are too long for it; never save that over them.
+        if self.hud.global::<HudState>().get_notes_too_long() {
+            return;
+        }
         if !self.notes_timer.running() && self.hud.global::<HudState>().get_notes_status() == "Saved" {
             return;
         }
@@ -1921,6 +1979,27 @@ fn open_spotify() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn notes_fit_by_lines_and_by_size() {
+        use super::{MAX_NOTE_BYTES, MAX_NOTE_LINES, notes_fit};
+        assert!(notes_fit(""));
+        assert!(notes_fit(
+            &"line
+"
+            .repeat(MAX_NOTE_LINES)
+        ));
+        assert!(
+            !notes_fit(
+                &"line
+"
+                .repeat(MAX_NOTE_LINES + 1)
+            ),
+            "too many lines"
+        );
+        assert!(notes_fit(&"x".repeat(MAX_NOTE_BYTES)), "one long line is fine up to the size cap");
+        assert!(!notes_fit(&"x".repeat(MAX_NOTE_BYTES + 1)), "too big");
+    }
+
     #[test]
     fn formats_durations() {
         assert_eq!(super::format_ms(61_000), "1:01");

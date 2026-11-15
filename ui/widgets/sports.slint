@@ -4,7 +4,7 @@
 import { Theme } from "../theme.slint";
 import { Card } from "../components.slint";
 import { GameData, LinkData, SportsState, TeamLine } from "../feeds/state.slint";
-import { FeedScroll, HScroll, LinkList, LiveDot, PanelHeader, Placeholder, SectionLabel, StripHeader, Thumb, Tone } from "../feeds/common.slint";
+import { FeedScroll, HScroll, LinkList, LiveDot, PanelHeader, Placeholder, SectionLabel, StripHeader, StripRows, Thumb, Tone } from "../feeds/common.slint";
 
 component Logo inherits Rectangle {
     in property <TeamLine> team;
@@ -227,7 +227,7 @@ export component SportsStrip inherits Card {
         if SportsState.tab == 1 && !root.empty : LinkList {
             vertical-stretch: 1;
             // Exactly three rows (and their two 1px dividers) fill the strip, so none peeks in below.
-            row-height: max(15px, (self.height - 2px) / 3);
+            row-height: StripRows.row-height(self.height);
             items: SportsState.stories;
             open(u) => { SportsState.open(u); }
         }

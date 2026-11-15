@@ -39,7 +39,8 @@ fn row(t: &Task) -> TaskData {
 
 impl TaskList {
     pub fn load() -> Self {
-        let mut items: Vec<Task> = storage::load_json(FILE).unwrap_or_default();
+        // A damaged entry costs only that task, not the list.
+        let mut items: Vec<Task> = storage::load_json_salvaged(FILE).unwrap_or_default();
         items.retain(|t| !t.title.trim().is_empty());
         items.sort_by_key(|t| t.done); // stable: open tasks first, order otherwise preserved
         Self::from_items(items)
@@ -172,6 +173,20 @@ impl TaskList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_damaged_task_costs_only_that_task() {
+        let file = serde_json::json!([
+            { "id": "a", "title": "Groceries", "done": false },
+            { "id": "b", "title": 42, "done": "maybe" },
+            { "id": "c", "title": "Call mum", "done": true, "completedOn": "2026-11-14" },
+        ]);
+        let (value, dropped) = crate::storage::salvage::<Vec<super::Task>>(file);
+        let tasks: Vec<super::Task> = serde_json::from_value(value).unwrap();
+        assert_eq!(dropped, ["[1]"]);
+        let titles: Vec<&str> = tasks.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["Groceries", "Call mum"]);
+    }
 
     fn list(titles: &[&str]) -> TaskList {
         let mut l = TaskList::from_items(Vec::new());

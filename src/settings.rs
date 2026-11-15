@@ -8,6 +8,14 @@ pub const TOP_SIZE_RANGE: (f32, f32) = (6.0, 16.0);
 /// The Top HUD's default height, as a percentage of the screen's height.
 pub const DEFAULT_TOP_SIZE: f32 = 9.0;
 pub const SIDE_SIZE_RANGE: (f32, f32) = (10.0, 25.0);
+/// Whatever the percentage, the HUD stays within these sizes (in DIPs), so a small screen never
+/// squeezes the widgets below the sizes their layouts are designed and tested for (snapshot `h=76`).
+pub const MIN_TOP_DIP: f32 = 76.0;
+pub const MAX_TOP_DIP: f32 = 200.0;
+pub const MIN_SIDE_DIP: f32 = 248.0;
+pub const MAX_SIDE_DIP: f32 = 560.0;
+/// Longer than any real place name; it goes into the geocoding request's URL.
+const MAX_CITY_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -111,6 +119,10 @@ pub struct Settings {
     pub reddit: crate::services::reddit::Prefs,
     pub netflix: crate::services::netflix::Prefs,
     pub stocks: crate::services::stocks::Prefs,
+    /// Settings this version doesn't know (written by a newer Life HUD), kept as they were and written
+    /// back on save, so going back and forth between versions doesn't lose them.
+    #[serde(flatten)]
+    pub unknown: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Every widget: (id, display name). Index = the UI's card kind.
@@ -168,6 +180,7 @@ impl Default for Settings {
             reddit: Default::default(),
             netflix: Default::default(),
             stocks: Default::default(),
+            unknown: serde_json::Map::new(),
         }
     }
 }
@@ -175,7 +188,8 @@ impl Default for Settings {
 impl Settings {
     /// Returns the settings and whether this is the first run.
     pub fn load() -> (Self, bool) {
-        match storage::load_json::<Settings>(FILE) {
+        // One bad value (a typo, or an option from a newer version) resets just that value.
+        match storage::load_json_salvaged::<Settings>(FILE) {
             Some(mut s) => {
                 s.normalize();
                 (s, false)
@@ -198,7 +212,7 @@ impl Settings {
         if crate::theme::find(&self.theme).is_none() {
             self.theme = crate::theme::CLASSIC.into();
         }
-        self.weather_city = self.weather_city.trim().to_string();
+        self.weather_city = self.weather_city.trim().chars().take(MAX_CITY_CHARS).collect();
         crate::playlists::normalize(&mut self.playlists);
         self.ai.normalize();
         self.news_curated =
@@ -322,6 +336,75 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What `load` does with a damaged file: salvage, then parse.
+    fn salvaged(file: serde_json::Value) -> (Settings, Vec<String>) {
+        let (value, dropped) = storage::salvage::<Settings>(file);
+        (serde_json::from_value(value).expect("salvaged settings parse"), dropped)
+    }
+
+    fn fav(id: &str) -> serde_json::Value {
+        serde_json::json!({ "league": "nhl", "id": id, "abbr": "TOR", "name": "Toronto" })
+    }
+
+    #[test]
+    fn one_bad_value_resets_only_that_value() {
+        let (s, dropped) = salvaged(serde_json::json!({
+            "topSizePercent": "big",
+            "theme": "midnight",
+            "weatherCity": "Paris",
+            "sidebarOrder": ["weather", "music"],
+        }));
+        assert_eq!(dropped, ["topSizePercent"]);
+        assert_eq!(s.top_size_percent, DEFAULT_TOP_SIZE);
+        assert_eq!((s.theme.as_str(), s.weather_city.as_str()), ("midnight", "Paris"));
+        assert_eq!(s.sidebar_order, ["weather", "music"]);
+    }
+
+    #[test]
+    fn an_option_from_a_newer_version_falls_back_alone() {
+        // e.g. a future "right" layout read by this version.
+        let (s, dropped) = salvaged(serde_json::json!({ "layout": "right", "celsius": false }));
+        assert_eq!(dropped, ["layout"]);
+        assert_eq!(s.layout, Layout::Top);
+        assert!(!s.celsius);
+    }
+
+    #[test]
+    fn damage_inside_a_section_stays_inside_it() {
+        let (s, dropped) = salvaged(serde_json::json!({
+            "sports": { "leagues": "nhl", "favorites": [fav("10"), { "league": 5 }, fav("21")] },
+        }));
+        assert_eq!(dropped, ["sports.favorites[1]", "sports.leagues"]);
+        assert_eq!(s.sports.leagues, crate::services::sports::Prefs::default().leagues);
+        let ids: Vec<&str> = s.sports.favorites.iter().map(|f| f.id.as_str()).collect();
+        assert_eq!(ids, ["10", "21"], "the good favourites survive, in order");
+    }
+
+    #[test]
+    fn a_list_where_a_value_belongs_falls_back() {
+        let (s, dropped) = salvaged(serde_json::json!({ "theme": ["midnight"], "showSeconds": true }));
+        assert_eq!(dropped, ["theme"]);
+        assert_eq!(s.theme, Settings::default().theme);
+        assert!(s.show_seconds);
+    }
+
+    #[test]
+    fn settings_from_a_newer_version_survive_a_save() {
+        let file = serde_json::json!({ "theme": "slate", "futureWidget": { "on": true }, "zz": [1, 2] });
+        let s: Settings = serde_json::from_value(file).unwrap();
+        let saved = serde_json::to_value(&s).unwrap();
+        assert_eq!(saved["futureWidget"], serde_json::json!({ "on": true }));
+        assert_eq!(saved["zz"], serde_json::json!([1, 2]));
+        assert_eq!(saved["theme"], "slate");
+    }
+
+    #[test]
+    fn a_runaway_city_name_is_capped() {
+        let mut s = Settings { weather_city: format!("  {}  ", "A".repeat(200_000)), ..Default::default() };
+        s.normalize();
+        assert_eq!(s.weather_city.chars().count(), MAX_CITY_CHARS);
+    }
 
     #[test]
     fn normalize_clamps_and_repairs() {

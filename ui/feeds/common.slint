@@ -408,3 +408,13 @@ export component PlayerBar {
         }
     }
 }
+
+/// Row sizing for the one-line lists in Top HUD strips (News, Reddit, Sports news). A strip shows
+/// up to three rows and only whole ones: as many as fit at 14px or more, sharing the height with the
+/// 1px dividers between them, so on a short bar a row is never cut in half.
+export global StripRows {
+    pure public function row-height(height: length) -> length {
+        return (height - (clamp(floor((height + 1px) / 15px), 1, 3) - 1) * 1px)
+            / clamp(floor((height + 1px) / 15px), 1, 3);
+    }
+}

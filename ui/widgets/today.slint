@@ -2,8 +2,47 @@
 // thinking on the other.
 
 import { Theme } from "../theme.slint";
-import { Card, GhostLineEdit, GhostTextArea, IconButton, Overline, ProgressRing, SlimProgress, TaskCheck } from "../components.slint";
+import { Card, GhostLineEdit, GhostTextArea, IconButton, Overline, PillButton, ProgressRing, SlimProgress, TaskCheck } from "../components.slint";
 import { HudState, TaskData } from "../state.slint";
+
+/// In place of the editor when the notes are too long to edit on the HUD (see app.rs `notes_fit`).
+/// The text is safe in notes.md; this offers to open it in a real editor.
+component NotesTooLong {
+    in property <length> font-size: 13px;
+    /// Sidebar: a sentence and the button below it. Top HUD: one line, the button beside it.
+    in property <bool> roomy;
+    if root.roomy : VerticalLayout {
+        alignment: start;
+        spacing: 6px;
+        padding-top: 2px;
+        Text {
+            text: "Your notes are too long to edit here (" + HudState.notes-size + "). They're saved; open them in your text editor. Trim them there and they'll come back here.";
+            font-size: root.font-size;
+            color: Theme.text2;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            alignment: start;
+            PillButton { text: "Open notes"; clicked => { HudState.open-notes(); } }
+        }
+    }
+    if !root.roomy : HorizontalLayout {
+        alignment: start;
+        spacing: 8px;
+        Text {
+            text: "Too long to edit here";
+            font-size: root.font-size;
+            color: Theme.text2;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            PillButton { text: "Open"; clicked => { HudState.open-notes(); } }
+        }
+    }
+}
 
 /// One task. The whole row is the touch target (tap anywhere to complete it); the circle animates,
 /// and a remove button appears on hover.
@@ -157,13 +196,14 @@ export component TodayStrip inherits Card {
                 Overline { text: "NOTES"; }
                 Overline { text: HudState.notes-status; horizontal-alignment: right; font-weight: 400; }
             }
-            GhostTextArea {
+            if !HudState.notes-too-long : GhostTextArea {
                 vertical-stretch: 1;
                 text <=> HudState.notes;
                 placeholder: "Jot something down…";
                 font-size: 13px;
                 edited(t) => { HudState.notes-edited(t); }
             }
+            if HudState.notes-too-long : NotesTooLong { vertical-stretch: 1; font-size: 12px; }
         }
     }
 }
@@ -231,12 +271,13 @@ export component TodayPanel inherits Card {
             }
         }
         Rectangle { height: 6px; }
-        GhostTextArea {
+        if !HudState.notes-too-long : GhostTextArea {
             vertical-stretch: 1;
             text <=> HudState.notes;
             placeholder: "Jot something down…";
             font-size: 14px;
             edited(t) => { HudState.notes-edited(t); }
         }
+        if HudState.notes-too-long : NotesTooLong { vertical-stretch: 1; roomy: true; }
     }
 }

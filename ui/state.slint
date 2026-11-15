@@ -85,6 +85,11 @@ export global HudState {
     in property <string> notes-status;
     in property <string> word-count;
     callback notes-edited(string);
+    /// The notes are too long to edit on the HUD (see `notes_fit` in app.rs): the editor gives way to
+    /// a note and a button that opens notes.md in the user's text editor. Nothing is cut.
+    in property <bool> notes-too-long;
+    in property <string> notes-size;
+    callback open-notes();
 
     // Music
     in property <bool> has-media;

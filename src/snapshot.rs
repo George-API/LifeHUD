@@ -139,6 +139,25 @@ pub fn run(args: &[String]) {
             set_tab(&hud, id, tab);
             render(&window, PhysicalSize::new(top_w, top_h), &out.join(format!("{id}-top-{tab}{suffix}.png")), light);
         }
+        if id == "today" {
+            // Notes too long to edit on the HUD (app.rs `notes_fit`).
+            state.set_notes_size("120000 lines".into());
+            state.set_notes_too_long(true);
+            render(&window, PhysicalSize::new(top_w, top_h), &out.join(format!("{id}-top-toolong{suffix}.png")), light);
+            settings.layout = Layout::Left;
+            feeds.apply_layout(&settings);
+            state.set_vertical(true);
+            render(
+                &window,
+                PhysicalSize::new(side_w, 1080),
+                &out.join(format!("{id}-side-toolong{suffix}.png")),
+                light,
+            );
+            state.set_notes_too_long(false);
+            settings.layout = Layout::Top;
+            feeds.apply_layout(&settings);
+            state.set_vertical(false);
+        }
         if id == "music" {
             state.set_volume_open(true);
             render(&window, PhysicalSize::new(top_w, top_h), &out.join(format!("{id}-top-volume{suffix}.png")), light);

@@ -3,7 +3,7 @@
 import { Theme } from "../theme.slint";
 import { Card } from "../components.slint";
 import { LinkData, RedditState } from "../feeds/state.slint";
-import { LinkList, PanelHeader, Placeholder, StripHeader } from "../feeds/common.slint";
+import { LinkList, PanelHeader, Placeholder, StripHeader, StripRows } from "../feeds/common.slint";
 
 export component RedditStrip inherits Card {
     property <[LinkData]> items: RedditState.tab == 0 ? RedditState.yours : RedditState.popular;
@@ -24,7 +24,7 @@ export component RedditStrip inherits Card {
         if root.items.length > 0 : LinkList {
             vertical-stretch: 1;
             // Exactly three rows (and their two 1px dividers) fill the strip, so none peeks in below.
-            row-height: max(15px, (self.height - 2px) / 3);
+            row-height: StripRows.row-height(self.height);
             items: root.items;
             open(u) => { RedditState.open(u); }
         }

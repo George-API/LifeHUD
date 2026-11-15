@@ -1,6 +1,7 @@
 import { Theme } from "../theme.slint";
 import { Card, Overline } from "../components.slint";
 import { HudState, NewsData } from "../state.slint";
+import { StripRows } from "../feeds/common.slint";
 
 /// Two quiet text tabs: Curated | Top.
 component Tabs {
@@ -114,7 +115,7 @@ component Feed {
         height: root.height;
         items: root.items;
         two-line: root.two-line;
-        row-height: max(15px, (root.height - 2px) / 3);
+        row-height: StripRows.row-height(root.height);
     }
     if root.items.length == 0 : Text {
         x: 0;
