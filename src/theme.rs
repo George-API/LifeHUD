@@ -350,6 +350,146 @@ pub const PALETTES: &[Palette] = &[
         0xFFFFFFFF,
         false,
     ),
+    // Polar night with northern-lights green and violet.
+    p(
+        "aurora",
+        "Aurora",
+        true,
+        0xCC0B1A1F,
+        &[0x3850E3A4, 0x000B1A1F, 0x2C9B7BFF],
+        0x16D6FFF0,
+        0x20C8F5E8,
+        0xFFEAFBF6,
+        Some(0xFF5EE0B0),
+        0xFF06201A,
+        false,
+    ),
+    // Frost with a cool jade.
+    p(
+        "aurora",
+        "Aurora",
+        false,
+        0xC8E4EEF0,
+        &[0x40F4FFFB, 0x2470D8B8, 0x1CA890F0],
+        0xB0F8FCFC,
+        0x16003A40,
+        0xEB0C2630,
+        Some(0xFF0F7A66),
+        0xFFFFFFFF,
+        false,
+    ),
+    // After sunset: coral fading through magenta into indigo.
+    p(
+        "dusk",
+        "Dusk",
+        true,
+        0xCC1C1426,
+        &[0x40FF8A5C, 0x24E0508C, 0x2C5A4FCF],
+        0x16FFE4DC,
+        0x22FFC8C0,
+        0xFFFFF0EC,
+        Some(0xFFFF9E7A),
+        0xFF2A1218,
+        false,
+    ),
+    // Golden hour: peach to lilac with a raspberry accent.
+    p(
+        "dusk",
+        "Dusk",
+        false,
+        0xC8F7E6E0,
+        &[0x48FFD0B0, 0x30F0A0C0, 0x28A898E8],
+        0xB0FFF9F7,
+        0x16602040,
+        0xEB2E1A2E,
+        Some(0xFFC4456A),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Oxblood with brass.
+    p(
+        "bordeaux",
+        "Bordeaux",
+        true,
+        0xCC22100F,
+        &[0x388C1C2C, 0x0022100F, 0x18D4A85A],
+        0x16FFE0DC,
+        0x22F0C8A8,
+        0xFFFBEFEA,
+        Some(0xFFD9B26A),
+        0xFF2A1408,
+        false,
+    ),
+    // Linen with deep claret.
+    p(
+        "bordeaux",
+        "Bordeaux",
+        false,
+        0xC8EFE2DC,
+        &[0x44FFF2EA, 0x248C2A3A],
+        0xB0FFFAF7,
+        0x16501018,
+        0xEB2A1216,
+        Some(0xFF7A1F2E),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Warm e-ink: sepia charcoal with cream text and a vermilion seal.
+    p(
+        "paper",
+        "Paper",
+        true,
+        0xE61C1A17,
+        &[0x14FFF4E0, 0x001C1A17],
+        0x14FFF6E8,
+        0x22FFF0DC,
+        0xFFF2ECE0,
+        Some(0xFFE8826A),
+        0xFF1C1A17,
+        false,
+    ),
+    // Off-white paper and near-black ink.
+    p(
+        "paper",
+        "Paper",
+        false,
+        0xE6F1EDE4,
+        &[0x30FFFDF6, 0x00F1EDE4],
+        0xC8FBF9F3,
+        0x1C2A2418,
+        0xF01F1B16,
+        Some(0xFFB8432E),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Deep spruce with fresh mint.
+    p(
+        "mint",
+        "Mint",
+        true,
+        0xCC10201B,
+        &[0x3486F0C4, 0x0010201B, 0x14C8FFE8],
+        0x16DAFFEE,
+        0x20C4F7E0,
+        0xFFEBFBF4,
+        Some(0xFF7EEDC0),
+        0xFF06261A,
+        false,
+    ),
+    // Crisp mint cream with spearmint green.
+    p(
+        "mint",
+        "Mint",
+        false,
+        0xC8E6F6EF,
+        &[0x48F2FFF9, 0x2C8EE8C4],
+        0xB8FBFFFD,
+        0x16004A30,
+        0xEB0E2A20,
+        Some(0xFF13946A),
+        0xFFFFFFFF,
+        false,
+    ),
     // Moods: one look each, with sticker art.
     p(
         "hearth",
@@ -564,9 +704,9 @@ pub fn apply(theme: &Theme, p: &Palette) {
     }
 }
 
-/// Swatches for the Appearance gallery.
-pub fn swatches(selected: &str, appearance: Appearance) -> ModelRc<ThemeSwatch> {
-    let items: Vec<ThemeSwatch> = themes()
+/// Swatches for the Appearance gallery: signature themes (light and dark) first, then the moods.
+pub fn swatches(selected: &str, appearance: Appearance) -> (ModelRc<ThemeSwatch>, ModelRc<ThemeSwatch>) {
+    let (signature, moods): (Vec<ThemeSwatch>, Vec<ThemeSwatch>) = themes()
         .into_iter()
         .map(|entry| {
             let p = resolve(entry.id, appearance);
@@ -586,8 +726,15 @@ pub fn swatches(selected: &str, appearance: Appearance) -> ModelRc<ThemeSwatch> 
                 sticker: p.stickers,
             }
         })
-        .collect();
-    ModelRc::new(VecModel::from(items))
+        .partition(|s| s.sticker == 0);
+    (ModelRc::new(VecModel::from(signature)), ModelRc::new(VecModel::from(moods)))
+}
+
+/// Loads both halves of the Appearance gallery into a Settings window.
+pub fn fill_gallery(st: &crate::SettingsState, selected: &str, appearance: Appearance) {
+    let (signature, moods) = swatches(selected, appearance);
+    st.set_themes(signature);
+    st.set_moods(moods);
 }
 
 /// iOS-style temperature colour scale, by °C.
@@ -643,6 +790,7 @@ mod tests {
         assert!(resolve("slate", Appearance::Light).dark);
         assert_eq!(resolve("unknown", Appearance::Dark).id, CLASSIC);
         assert!(adaptive("olive") && !adaptive("hearth"));
+        assert!(adaptive("aurora") && adaptive("dusk") && adaptive("bordeaux") && adaptive("paper") && adaptive("mint"));
     }
 
     #[test]

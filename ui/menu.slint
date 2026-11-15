@@ -9,9 +9,13 @@ export struct MenuRow {
     id: int,
     text: string,
     checked: bool,
-    /// A small colour preview before the text (theme menus): `swatch` ring around an `accent` dot.
+    /// A tiny HUD preview before the text (theme menus): the `swatch` backdrop lit by the
+    /// `glow-a`→`glow-b` ambient light, with a `card` bar holding an `accent` dot.
     has-swatch: bool,
     swatch: color,
+    glow-a: color,
+    glow-b: color,
+    card: color,
     accent: color,
 }
 
@@ -105,18 +109,32 @@ export component MenuWindow inherits Window {
                         opacity: row.checked ? 1 : 0;
                     }
                     if row.has-swatch : Rectangle {
-                        width: 14px;
-                        height: 14px;
+                        width: 30px;
+                        height: 20px;
                         y: (parent.height - self.height) / 2;
-                        border-radius: 7px;
+                        border-radius: 5px;
                         background: row.swatch;
-                        border-width: 1px;
-                        border-color: entry.lit ? Theme.on-accent.with-alpha(0.6) : Theme.card-border;
+                        clip: true;
+                        Rectangle { background: @linear-gradient(135deg, row.glow-a 0%, row.glow-b 100%); }
                         Rectangle {
-                            width: 6px;
+                            x: 4px;
+                            y: parent.height - self.height - 4px;
+                            width: parent.width - 8px;
                             height: 6px;
-                            border-radius: 3px;
-                            background: row.accent;
+                            border-radius: 2px;
+                            background: row.card;
+                            Rectangle {
+                                x: 2px;
+                                width: 4px;
+                                height: 4px;
+                                border-radius: 2px;
+                                background: row.accent;
+                            }
+                        }
+                        Rectangle {
+                            border-radius: parent.border-radius;
+                            border-width: 1px;
+                            border-color: entry.lit ? Theme.on-accent.with-alpha(0.6) : Theme.card-border;
                         }
                     }
                     Text {

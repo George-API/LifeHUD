@@ -24,6 +24,10 @@ pub enum Item {
         text: String,
         checked: bool,
         surface: u32,
+        /// The theme's ambient light, corner to corner.
+        glow_a: u32,
+        glow_b: u32,
+        card: u32,
         accent: u32,
     },
     Separator,

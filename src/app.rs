@@ -702,7 +702,7 @@ impl App {
         self.chat.apply_theme(&palette);
         if let Some(sw) = self.settings_window.borrow().as_ref() {
             theme::apply(&sw.global::<Theme>(), &palette);
-            sw.global::<SettingsState>().set_themes(theme::swatches(&id, appearance));
+            theme::fill_gallery(&sw.global::<SettingsState>(), &id, appearance);
             if let Some(hwnd) = hwnd_of(sw.window()) {
                 effects::set_dark_title_bar(hwnd, palette.dark);
             }
@@ -1240,7 +1240,7 @@ impl App {
         st.set_fit_windows(s.fit_windows);
         st.set_open_at_login(startup::is_enabled());
         self.populate_layout(&st);
-        st.set_themes(theme::swatches(&s.theme, s.appearance));
+        theme::fill_gallery(&st, &s.theme, s.appearance);
         st.set_appearance(match s.appearance {
             Appearance::Auto => 0,
             Appearance::Light => 1,
@@ -1382,11 +1382,15 @@ impl App {
         let (mut signature, mut moods) = (vec![Item::Header("Signature".into())], vec![]);
         for (i, entry) in theme::themes().into_iter().enumerate() {
             let p = theme::resolve(entry.id, appearance);
+            let [a, _, c] = theme::ambient_stops(&p);
             let item = Item::Swatch {
                 id: i,
                 text: p.name.into(),
                 checked: p.id.eq_ignore_ascii_case(&current),
                 surface: p.tint | 0xFF00_0000,
+                glow_a: to_u32(a),
+                glow_b: to_u32(c),
+                card: p.card,
                 accent: to_u32(theme::accent(&p)),
             };
             if p.stickers > 0 { moods.push(item) } else { signature.push(item) }

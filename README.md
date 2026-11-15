@@ -32,19 +32,29 @@ under it.
 
 - **Native and light.** One 18 MB exe. No Electron, no runtime, ~0.5% of one core with music playing.
 - **Private.** No account, no telemetry, no ads. Everything stays on your machine.
-- **Yours.** Pick any four widgets and one of seventeen themes, most in light and dark.
+- **Yours.** Pick any four widgets and one of 22 themes, most in light and dark.
 
 ## Install
 
-1. **[Download `lifehud.exe`](https://github.com/George-API/LifeHUD/releases/latest/download/lifehud.exe)** (always the latest version).
-2. Open it. If you see *"Windows protected your PC"*, click **More info → Run anyway**. The exe isn't
-   code-signed yet; Windows only asks once.
+**[Download `lifehud.exe`](https://github.com/George-API/LifeHUD/releases/latest/download/lifehud.exe)** and open it. That's the whole install.
 
-That's it. It installs for your user, adds itself to the Start menu and *Settings → Apps*, docks to the
-top of the screen and opens Settings. To update, download and open it again. For a portable copy, put
-an empty file named `portable` next to the exe.
+> If Windows says *"Windows protected your PC"*, click **More info → Run anyway**. The app isn't
+> code-signed yet, so Windows asks once.
 
-Requires Windows 10 (2004) or later. Releases are built by [CI](.github/workflows/release.yml) from this
+Prefer a terminal? This does the same in PowerShell:
+
+```powershell
+$f = "$env:TEMP\lifehud.exe"; iwr https://github.com/George-API/LifeHUD/releases/latest/download/lifehud.exe -OutFile $f; & $f
+```
+
+Life HUD installs itself for your user (no admin), docks to the top of your screen and opens Settings
+so you can pick your city, widgets and theme.
+
+- **Update:** download and open it again.
+- **Uninstall:** *Settings → Apps → Life HUD*, like any other app.
+- **Portable:** put an empty file named `portable` next to the exe and it runs without installing.
+
+Needs Windows 10 (2004) or later. Releases are built by [CI](.github/workflows/release.yml) from this
 repo and ship with a SHA-256.
 
 ## Widgets

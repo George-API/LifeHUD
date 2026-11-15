@@ -64,7 +64,9 @@ export global SettingsState {
     in property <[string]> monitors: ["Display 1"];
     in-out property <int> monitor-index;
 
+    /// Signature themes (light and dark looks), then the moods (one look each, with sticker art).
     in property <[ThemeSwatch]> themes;
+    in property <[ThemeSwatch]> moods;
     in-out property <int> appearance;
     in property <bool> appearance-enabled: true;
     in-out property <bool> use-24h;
@@ -363,6 +365,24 @@ component Swatch {
     TouchArea { clicked => { root.clicked(); } }
 }
 
+/// Theme tiles, four to a row.
+component SwatchGrid {
+    in property <[ThemeSwatch]> items;
+    property <int> columns: 4;
+    property <length> cell-gap: 12px;
+    property <length> cell-width: (self.width - (self.columns - 1) * self.cell-gap) / self.columns;
+    property <length> cell-height: 86px;
+    height: ceil(self.items.length / self.columns) * (self.cell-height + self.cell-gap) - self.cell-gap;
+    for swatch[i] in root.items : Swatch {
+        x: mod(i, root.columns) * (root.cell-width + root.cell-gap);
+        y: floor(i / root.columns) * (root.cell-height + root.cell-gap);
+        width: root.cell-width;
+        height: root.cell-height;
+        swatch: swatch;
+        clicked => { SettingsState.select-theme(swatch.id); }
+    }
+}
+
 export component SettingsWindow inherits Window {
     title: "Life HUD";
     icon: @image-url("../assets/icon.png");
@@ -566,36 +586,24 @@ export component SettingsWindow inherits Window {
                 if SettingsState.page == 2 : VerticalLayout {
                     spacing: 12px;
                     PageTitle { text: "Appearance"; }
-                    Text { text: "Theme"; font-size: 13px; font-weight: 600; color: Look.label; }
-                    Rectangle {
-                        property <int> columns: 4;
-                        property <length> cell-gap: 12px;
-                        property <length> cell-width: (self.width - (self.columns - 1) * self.cell-gap) / self.columns;
-                        property <length> cell-height: 86px;
-                        height: ceil(SettingsState.themes.length / self.columns) * (self.cell-height + self.cell-gap);
-                        for swatch[i] in SettingsState.themes : Swatch {
-                            x: mod(i, parent.columns) * (parent.cell-width + parent.cell-gap);
-                            y: floor(i / parent.columns) * (parent.cell-height + parent.cell-gap);
-                            width: parent.cell-width;
-                            height: parent.cell-height;
-                            swatch: swatch;
-                            clicked => { SettingsState.select-theme(swatch.id); }
-                        }
-                    }
                     Group {
                         Row {
                             label: "Light or dark";
-                            detail: SettingsState.appearance-enabled ? "Auto follows Windows." : "This theme has one look in every mode. Signature themes switch between light and dark.";
+                            detail: SettingsState.appearance-enabled ? "Auto follows Windows. The previews below switch with it." : "Your mood has one look. This still switches the Signature previews below.";
                             last: true;
                             Segmented {
                                 width: 220px;
                                 items: ["Auto", "Light", "Dark"];
-                                enabled: SettingsState.appearance-enabled;
                                 index <=> SettingsState.appearance;
                                 changed => { SettingsState.changed("theme"); }
                             }
                         }
                     }
+                    Text { text: "Signature"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    SwatchGrid { items: SettingsState.themes; }
+                    Text { text: "Mood"; font-size: 13px; font-weight: 600; color: Look.label; }
+                    Footnote { text: "One look each, with sticker art."; }
+                    SwatchGrid { items: SettingsState.moods; }
                     Text { text: "Clock"; font-size: 13px; font-weight: 600; color: Look.label; }
                     Group {
                         Row {

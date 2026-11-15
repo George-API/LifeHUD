@@ -118,13 +118,19 @@ fn row(item: &Item) -> MenuRow {
         checked,
         has_swatch: false,
         swatch: Default::default(),
+        glow_a: Default::default(),
+        glow_b: Default::default(),
+        card: Default::default(),
         accent: Default::default(),
     };
     match item {
         Item::Entry { id, text, checked } => base(0, *id, text, *checked),
-        Item::Swatch { id, text, checked, surface, accent } => MenuRow {
+        Item::Swatch { id, text, checked, surface, glow_a, glow_b, card, accent } => MenuRow {
             has_swatch: true,
             swatch: crate::theme::argb(*surface),
+            glow_a: crate::theme::argb(*glow_a),
+            glow_b: crate::theme::argb(*glow_b),
+            card: crate::theme::argb(*card),
             accent: crate::theme::argb(*accent),
             ..base(0, *id, text, *checked)
         },
