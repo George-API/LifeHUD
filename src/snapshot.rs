@@ -31,9 +31,10 @@ impl Platform for Offscreen {
 pub fn run(args: &[String]) {
     let out = std::path::PathBuf::from(args.first().cloned().unwrap_or_else(|| ".".into()));
     // Options: "light", "empty" (no data: unconfigured/loading states), "h=<px>" (Top HUD height,
-    // default 96) and "w=<px>" (Sidebar width, default 340).
+    // default 96), "w=<px>" (Sidebar width, default 340) and "tw=<px>" (Top HUD width, default 1920).
     let option = |prefix: &str| args.iter().find_map(|a| a.strip_prefix(prefix)?.parse::<u32>().ok());
     let (top_h, side_w) = (option("h=").unwrap_or(96), option("w=").unwrap_or(340));
+    let top_w = option("tw=").unwrap_or(1920);
     let light = args.iter().any(|a| a == "light");
     // "theme=<id>" renders with that palette (default Classic).
     let theme_id = args.iter().find_map(|a| a.strip_prefix("theme=")).unwrap_or(theme::CLASSIC).to_string();
@@ -43,13 +44,18 @@ pub fn run(args: &[String]) {
         .skip(1)
         .map(|s| s.as_str())
         .filter(|s| {
-            !matches!(*s, "light" | "empty") && !s.starts_with("h=") && !s.starts_with("w=") && !s.starts_with("theme=")
+            !matches!(*s, "light" | "empty")
+                && !s.starts_with("h=")
+                && !s.starts_with("w=")
+                && !s.starts_with("tw=")
+                && !s.starts_with("theme=")
         })
         .collect();
     let suffix = format!(
-        "{}{}",
+        "{}{}{}",
         if empty { "-empty" } else { "" },
-        if top_h != 96 || side_w != 340 { format!("-{top_h}x{side_w}") } else { String::new() }
+        if top_h != 96 || side_w != 340 { format!("-{top_h}x{side_w}") } else { String::new() },
+        if top_w != 1920 { format!("-tw{top_w}") } else { String::new() }
     );
     let _ = std::fs::create_dir_all(&out);
     // Keep caches and logs away from the real app's data folder. Still single-threaded here.
@@ -90,6 +96,27 @@ pub fn run(args: &[String]) {
         }
 
         let state = hud.global::<HudState>();
+        if !empty {
+            // A settled forecast, so the Weather card is laid out with real-looking content.
+            state.set_location("Toronto".into());
+            state.set_temperature("12°".into());
+            state.set_description("Partly cloudy".into());
+            state.set_high_low("H:14°  L:6°".into());
+            state.set_condition(crate::Condition::PartlyCloudy);
+            let day = |label: &str, condition, high: &str| crate::DayData {
+                label: label.into(),
+                condition,
+                high: high.into(),
+                ..Default::default()
+            };
+            let upcoming = vec![
+                day("Mon", crate::Condition::Clear, "15°"),
+                day("Tue", crate::Condition::Rain, "11°"),
+                day("Wed", crate::Condition::Cloudy, "9°"),
+            ];
+            state.set_upcoming(ModelRc::new(VecModel::from(upcoming)));
+            state.set_weather_ready(true);
+        }
         if id == "music" {
             // Something playing, with a player whose volume we can control.
             state.set_has_media(true);
@@ -104,17 +131,17 @@ pub fn run(args: &[String]) {
             state.set_volume_available(true);
             state.set_volume(0.62);
         }
-        // Top HUD: 1920×96, the widget in the left slot.
+        // Top HUD: 1920×96 by default, the widget in the left slot.
         settings.layout = Layout::Top;
         feeds.apply_layout(&settings);
         state.set_vertical(false);
         for tab in [0, 1] {
             set_tab(&hud, id, tab);
-            render(&window, PhysicalSize::new(1920, top_h), &out.join(format!("{id}-top-{tab}{suffix}.png")), light);
+            render(&window, PhysicalSize::new(top_w, top_h), &out.join(format!("{id}-top-{tab}{suffix}.png")), light);
         }
         if id == "music" {
             state.set_volume_open(true);
-            render(&window, PhysicalSize::new(1920, top_h), &out.join(format!("{id}-top-volume{suffix}.png")), light);
+            render(&window, PhysicalSize::new(top_w, top_h), &out.join(format!("{id}-top-volume{suffix}.png")), light);
             state.set_volume_open(false);
         }
         // Sidebar: 340×1080 with the widget under the weather card.
@@ -150,7 +177,12 @@ pub fn run(args: &[String]) {
             settings.layout = Layout::Top;
             feeds.apply_layout(&settings);
             state.set_vertical(false);
-            render(&window, PhysicalSize::new(1920, top_h), &out.join(format!("{id}-top-watching{suffix}.png")), light);
+            render(
+                &window,
+                PhysicalSize::new(top_w, top_h),
+                &out.join(format!("{id}-top-watching{suffix}.png")),
+                light,
+            );
             state.set_watching(false);
             // A video docked into the widget (the black area is where Edge's window sits).
             let player = hud.global::<crate::PlayerState>();
@@ -161,7 +193,7 @@ pub fn run(args: &[String]) {
                 if id == "youtube" { "The Fermi Paradox — Where Are All The Aliens?" } else { "Stranger Things" }
                     .into(),
             );
-            render(&window, PhysicalSize::new(1920, top_h), &out.join(format!("{id}-top-docked{suffix}.png")), light);
+            render(&window, PhysicalSize::new(top_w, top_h), &out.join(format!("{id}-top-docked{suffix}.png")), light);
             settings.layout = Layout::Left;
             feeds.apply_layout(&settings);
             state.set_vertical(true);

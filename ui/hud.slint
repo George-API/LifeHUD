@@ -156,7 +156,7 @@ export component HudWindow inherits Window {
         property <int> per-side: max(1, max(Slots.left.length, Slots.right.length));
         property <length> card-avail: self.side-width - 34px - root.gap;
         property <length> card-w: max(0px, (self.card-avail - (self.per-side - 1) * root.gap) / self.per-side);
-        property <bool> compact: self.card-w < 360px;
+        property <bool> compact: self.card-w < 470px;
 
         Rectangle {
             y: root.height - 1px;

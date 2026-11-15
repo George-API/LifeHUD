@@ -12,7 +12,6 @@ export component WeatherStrip inherits Card {
         padding-left: 16px;
         padding-right: 16px;
         spacing: 10px;
-        alignment: start;
 
         WeatherIcon {
             width: 38px;
@@ -24,19 +23,24 @@ export component WeatherStrip inherits Card {
         VerticalLayout {
             alignment: center;
             spacing: -2px;
+            horizontal-stretch: 1;
+            min-width: 56px;
             Text { text: HudState.temperature; font-family: Theme.display-font; font-size: 26px; font-weight: 600; color: Theme.text; }
-            Text { text: HudState.location; font-size: 12px; color: Theme.text2; overflow: elide; max-width: 110px; }
+            Text { text: HudState.location; font-size: 12px; color: Theme.text2; overflow: elide; }
         }
         VerticalLayout {
             alignment: center;
             padding-left: 4px;
-            Text { text: HudState.description; font-size: 13px; font-weight: 600; color: Theme.text; overflow: elide; max-width: 120px; }
+            horizontal-stretch: 1;
+            min-width: 72px;
+            Text { text: HudState.description; font-size: 13px; font-weight: 600; color: Theme.text; overflow: elide; }
             Text { text: HudState.high-low; font-size: 12px; color: Theme.text2; }
             if HudState.weather-status != "" : Text { text: HudState.weather-status; font-size: 11px; color: Theme.text3; }
         }
         if !root.compact : HorizontalLayout {
             padding-left: 8px;
             spacing: 2px;
+            horizontal-stretch: 0;
             Rectangle { width: 1px; background: Theme.divider; }
             for day in HudState.upcoming : VerticalLayout {
                 width: 40px;
