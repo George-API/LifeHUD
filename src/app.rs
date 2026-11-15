@@ -522,7 +522,7 @@ impl App {
             }
             ShellEvent::SettingChanged => {
                 // Light/dark or accent colour may have changed.
-                if self.settings.borrow().theme == theme::CLASSIC
+                if theme::adaptive(&self.settings.borrow().theme)
                     || theme::find(&self.settings.borrow().theme).is_some_and(|p| p.accent.is_none())
                 {
                     self.apply_theme();
@@ -1241,7 +1241,7 @@ impl App {
             Appearance::Light => 1,
             Appearance::Dark => 2,
         });
-        st.set_appearance_enabled(s.theme == theme::CLASSIC);
+        st.set_appearance_enabled(theme::adaptive(&s.theme));
         st.set_use_24h(s.use_24h);
         st.set_show_seconds(s.show_seconds);
         st.set_city(s.weather_city.as_str().into());
@@ -1360,7 +1360,7 @@ impl App {
         self.schedule_save();
         self.apply_theme();
         if let Some(sw) = self.settings_window.borrow().as_ref() {
-            sw.global::<SettingsState>().set_appearance_enabled(id == theme::CLASSIC);
+            sw.global::<SettingsState>().set_appearance_enabled(theme::adaptive(id));
         }
     }
 
@@ -1375,7 +1375,7 @@ impl App {
         };
         let to_u32 = |c: slint::Color| u32::from_be_bytes([c.alpha(), c.red(), c.green(), c.blue()]);
         let (mut signature, mut moods) = (vec![Item::Header("Signature".into())], vec![]);
-        for (i, entry) in theme::PALETTES.iter().enumerate() {
+        for (i, entry) in theme::themes().into_iter().enumerate() {
             let p = theme::resolve(entry.id, appearance);
             let item = Item::Swatch {
                 id: i,
@@ -1394,7 +1394,7 @@ impl App {
         let palette = theme::resolve(&current, appearance);
         let w = Rc::downgrade(self);
         crate::context_menu::show(&palette, signature, move |i| {
-            if let (Some(a), Some(p)) = (w.upgrade(), theme::PALETTES.get(i)) {
+            if let (Some(a), Some(p)) = (w.upgrade(), theme::themes().get(i).copied()) {
                 a.set_theme(p.id);
             }
         });

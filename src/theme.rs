@@ -1,5 +1,6 @@
 //! Themes are a handful of colours; every other token is derived here so themes stay consistent.
-//! Adding a theme is one entry in [`PALETTES`].
+//! Adding a theme is one entry in [`PALETTES`], or two (light and dark) for a theme that follows the
+//! Light/Dark/Auto setting.
 
 use slint::{Color, ModelRc, VecModel};
 
@@ -27,7 +28,7 @@ pub struct Palette {
     pub accent_play_button: bool,
     /// Decorative sticker art for mood themes (0 = none). See ui/stickers.slint.
     pub stickers: i32,
-    /// Stronger secondary text and edges (Graphite).
+    /// Stronger secondary text and edges (Graphite, Slate).
     pub high_contrast: bool,
 }
 
@@ -74,13 +75,11 @@ impl Palette {
     }
 }
 
-pub const CLASSIC_LIGHT: Palette =
-    p(CLASSIC, "Classic", false, 0xA8F4F4F7, &[], 0x9EFFFFFF, 0x10000000, 0xE6000000, None, 0xFFFFFFFF, false);
-pub const CLASSIC_DARK: Palette =
-    p(CLASSIC, "Classic", true, 0xB41A1A1E, &[], 0x12FFFFFF, 0x14FFFFFF, 0xFFFFFFFF, None, 0xFF000000, false);
-
+/// Signature themes come as a pair, one light and one dark entry under the same id, and follow the
+/// Light/Dark/Auto setting. Themes with a single entry (Slate and the moods) have one fixed look.
 pub const PALETTES: &[Palette] = &[
-    CLASSIC_DARK,
+    p(CLASSIC, "Classic", true, 0xB41A1A1E, &[], 0x12FFFFFF, 0x14FFFFFF, 0xFFFFFFFF, None, 0xFF000000, false),
+    p(CLASSIC, "Classic", false, 0xA8F4F4F7, &[], 0x9EFFFFFF, 0x10000000, 0xE6000000, None, 0xFFFFFFFF, false),
     // True black for OLED screens, with stronger text and edges for readability.
     p(
         "graphite",
@@ -96,33 +95,52 @@ pub const PALETTES: &[Palette] = &[
         false,
     )
     .high_contrast(),
+    // Porcelain: bright white glass and near-black ink, the light counterpart to true black.
     p(
-        "midnight",
-        "Midnight",
-        true,
-        0xC80B1220,
-        &[0x332F4A80, 0x000B1220],
-        0x14A8C0FF,
-        0x1FA8C0FF,
-        0xFFEEF2FF,
-        Some(0xFF8FB3FF),
-        0xFF0B1220,
+        "graphite",
+        "Graphite",
         false,
-    ),
-    p(
-        "starlight",
-        "Starlight",
-        false,
-        0xC2F3E9D8,
-        &[0x44FFF4DC, 0x28E2C99A],
-        0xA8FFFDF8,
-        0x16583F1A,
-        0xF02B2118,
-        Some(0xFF846738),
+        0xE8F4F4F6,
+        &[0x30FFFFFF, 0x00FFFFFF],
+        0xCCFFFFFF,
+        0x24000000,
+        0xFF111113,
+        Some(0xFF1D1D1F),
         0xFFFFFFFF,
         false,
+    )
+    .high_contrast(),
+    // Mid-tone tech grey, halfway between the dark and light sets: brushed-aluminium glass with an
+    // ice-blue accent. One look in every mode, since it already sits in between.
+    p(
+        "slate",
+        "Slate",
+        true,
+        0xD852565D,
+        &[0x1CFFFFFF, 0x00FFFFFF, 0x1488B4E0],
+        0x10FFFFFF,
+        0x24FFFFFF,
+        0xFFFFFFFF,
+        Some(0xFFBEE6FF),
+        0xFF1E2126,
+        false,
+    )
+    .high_contrast(),
+    // Gunmetal and steel blue.
+    p(
+        "titanium",
+        "Titanium",
+        true,
+        0xCC23272D,
+        &[0x24C8D6E8, 0x0023272D],
+        0x14E6EEF8,
+        0x1EDDE6F2,
+        0xFFEEF2F6,
+        Some(0xFFA9C2DD),
+        0xFF16202C,
+        false,
     ),
-    // Cool silver: the light set's counterpart to Starlight's warmth.
+    // Cool silver.
     p(
         "titanium",
         "Titanium",
@@ -136,6 +154,189 @@ pub const PALETTES: &[Palette] = &[
         0xFFFFFFFF,
         false,
     ),
+    // Deep navy with periwinkle.
+    p(
+        "midnight",
+        "Midnight",
+        true,
+        0xC80B1220,
+        &[0x332F4A80, 0x000B1220],
+        0x14A8C0FF,
+        0x1FA8C0FF,
+        0xFFEEF2FF,
+        Some(0xFF8FB3FF),
+        0xFF0B1220,
+        false,
+    ),
+    // Ice blue with sapphire.
+    p(
+        "midnight",
+        "Midnight",
+        false,
+        0xC8E3EAF5,
+        &[0x40FFFFFF, 0x248FB3FF],
+        0xA8F8FAFF,
+        0x161A2A50,
+        0xEB0E1A33,
+        Some(0xFF2F5BB7),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Aubergine with lilac.
+    p(
+        "amethyst",
+        "Amethyst",
+        true,
+        0xCC1C1726,
+        &[0x38A07CE0, 0x001C1726, 0x18E0A8D8],
+        0x16EDE0FF,
+        0x22DCCBFF,
+        0xFFF4F0FF,
+        Some(0xFFC4ADFF),
+        0xFF1C1230,
+        false,
+    ),
+    // Lavender mist with violet.
+    p(
+        "amethyst",
+        "Amethyst",
+        false,
+        0xC8E9E4F2,
+        &[0x40FBF8FF, 0x24A890D8],
+        0xB0FBF9FF,
+        0x16301A50,
+        0xEB211A33,
+        Some(0xFF6A4FB0),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Deep teal ink with aqua.
+    p(
+        "lagoon",
+        "Lagoon",
+        true,
+        0xCC0E1F21,
+        &[0x3440C8B8, 0x000E1F21, 0x1470A8E0],
+        0x16C8F5F0,
+        0x20B8EEE6,
+        0xFFE8F7F5,
+        Some(0xFF6FD8C8),
+        0xFF06201C,
+        false,
+    ),
+    // Pale sea glass with jade.
+    p(
+        "lagoon",
+        "Lagoon",
+        false,
+        0xC8DCEEEC,
+        &[0x40F2FFFC, 0x2470C8BE],
+        0xB0F7FCFB,
+        0x16004040,
+        0xEB0C2A2A,
+        Some(0xFF16736C),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Smoked olive with a chartreuse-gold accent.
+    p(
+        "olive",
+        "Olive",
+        true,
+        0xCC1E2117,
+        &[0x34A8B26B, 0x001E2117, 0x14D9C27A],
+        0x16E8EEC8,
+        0x20E2E8C0,
+        0xFFF2F4E6,
+        Some(0xFFC5D17A),
+        0xFF1C2010,
+        false,
+    ),
+    // Stone and sage paper with olive.
+    p(
+        "olive",
+        "Olive",
+        false,
+        0xC8E6E6D2,
+        &[0x40F5F2DC, 0x24A3A86B],
+        0xB0FBFAF2,
+        0x16404520,
+        0xEB252818,
+        Some(0xFF5C6B2A),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Champagne (id kept from Starlight): espresso with gold.
+    p(
+        "starlight",
+        "Champagne",
+        true,
+        0xCC1F1A14,
+        &[0x34E8C48A, 0x001F1A14, 0x14FFF0D0],
+        0x16FFF1DA,
+        0x22F5DDB4,
+        0xFFFBF3E6,
+        Some(0xFFE2C28A),
+        0xFF231A0C,
+        false,
+    ),
+    // Warm ivory with antique gold.
+    p(
+        "starlight",
+        "Champagne",
+        false,
+        0xC2F3E9D8,
+        &[0x44FFF4DC, 0x28E2C99A],
+        0xA8FFFDF8,
+        0x16583F1A,
+        0xF02B2118,
+        Some(0xFF846738),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Cocoa with soft peach.
+    p(
+        "peach",
+        "Peach",
+        true,
+        0xCC2A1D19,
+        &[0x38FF9E7A, 0x002A1D19, 0x18FFC9A8],
+        0x16FFE5D6,
+        0x22FFD2BC,
+        0xFFFFF1E8,
+        Some(0xFFFFB494),
+        0xFF2A1810,
+        false,
+    ),
+    // Apricot cream with terracotta.
+    p(
+        "peach",
+        "Peach",
+        false,
+        0xC8F8E3D3,
+        &[0x48FFE8D6, 0x28F5A880],
+        0xB0FFF8F2,
+        0x16703A1A,
+        0xEB3A2418,
+        Some(0xFFB0502C),
+        0xFFFFFFFF,
+        false,
+    ),
+    // Wine with rose quartz.
+    p(
+        "rose",
+        "Rosé",
+        true,
+        0xCC2A1A20,
+        &[0x38E9A0AE, 0x002A1A20, 0x18F5C6B8],
+        0x16FFE0E6,
+        0x22FFD0DA,
+        0xFFFFF0F2,
+        Some(0xFFF2A9B6),
+        0xFF2A1218,
+        false,
+    ),
+    // Blush with clay rose.
     p(
         "rose",
         "Rosé",
@@ -149,6 +350,7 @@ pub const PALETTES: &[Palette] = &[
         0xFFFFFFFF,
         false,
     ),
+    // Moods: one look each, with sticker art.
     p(
         "hearth",
         "Hearth",
@@ -240,19 +442,30 @@ pub fn find(id: &str) -> Option<&'static Palette> {
     PALETTES.iter().find(|p| p.id.eq_ignore_ascii_case(id))
 }
 
-/// The concrete palette for a theme id, resolving Classic against light/dark mode.
+/// One entry per theme, in gallery order (the first variant of each id).
+pub fn themes() -> Vec<&'static Palette> {
+    PALETTES.iter().filter(|p| find(p.id).is_some_and(|f| std::ptr::eq(f, *p))).collect()
+}
+
+/// Whether a theme has both a light and a dark look, and so follows the Light/Dark/Auto setting.
+pub fn adaptive(id: &str) -> bool {
+    PALETTES.iter().filter(|p| p.id.eq_ignore_ascii_case(id)).count() > 1
+}
+
+/// The concrete palette for a theme id, picking its light or dark look by the appearance setting.
+/// Unknown ids fall back to Classic.
 pub fn resolve(id: &str, appearance: Appearance) -> Palette {
-    match find(id) {
-        Some(p) if p.id != CLASSIC => *p,
-        _ => {
-            let dark = match appearance {
-                Appearance::Dark => true,
-                Appearance::Light => false,
-                Appearance::Auto => crate::platform::system_prefers_dark(),
-            };
-            if dark { CLASSIC_DARK } else { CLASSIC_LIGHT }
-        }
+    let id = if find(id).is_some() { id } else { CLASSIC };
+    let first = *find(id).unwrap_or(&PALETTES[0]);
+    if !adaptive(id) {
+        return first;
     }
+    let dark = match appearance {
+        Appearance::Dark => true,
+        Appearance::Light => false,
+        Appearance::Auto => crate::platform::system_prefers_dark(),
+    };
+    PALETTES.iter().find(|p| p.id.eq_ignore_ascii_case(id) && p.dark == dark).copied().unwrap_or(first)
 }
 
 pub fn argb(v: u32) -> Color {
@@ -353,8 +566,8 @@ pub fn apply(theme: &Theme, p: &Palette) {
 
 /// Swatches for the Appearance gallery.
 pub fn swatches(selected: &str, appearance: Appearance) -> ModelRc<ThemeSwatch> {
-    let items: Vec<ThemeSwatch> = PALETTES
-        .iter()
+    let items: Vec<ThemeSwatch> = themes()
+        .into_iter()
         .map(|entry| {
             let p = resolve(entry.id, appearance);
             let t = argb(p.tint);
@@ -409,17 +622,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn palette_ids_are_unique() {
-        let mut ids: Vec<_> = PALETTES.iter().map(|p| p.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), PALETTES.len());
+    fn each_theme_has_at_most_one_light_and_one_dark_look() {
+        for t in themes() {
+            let variants: Vec<_> = PALETTES.iter().filter(|p| p.id == t.id).collect();
+            assert!(variants.len() <= 2, "{} has {} entries", t.id, variants.len());
+            if let [a, b] = variants[..] {
+                assert_ne!(a.dark, b.dark, "{} needs one light and one dark entry", t.id);
+                assert_eq!(a.name, b.name);
+            }
+        }
     }
 
     #[test]
-    fn non_classic_resolves_to_itself() {
+    fn resolve_picks_the_light_or_dark_look() {
+        assert!(!resolve("peach", Appearance::Light).dark);
+        assert!(resolve("peach", Appearance::Dark).dark);
+        assert!(!resolve(CLASSIC, Appearance::Light).dark);
+        // Single-look themes ignore the setting.
         assert_eq!(resolve("neon", Appearance::Light).id, "neon");
+        assert!(resolve("slate", Appearance::Light).dark);
         assert_eq!(resolve("unknown", Appearance::Dark).id, CLASSIC);
+        assert!(adaptive("olive") && !adaptive("hearth"));
     }
 
     #[test]

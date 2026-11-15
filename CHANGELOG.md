@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Look
+
+- **Signature themes now come in light and dark,** and follow the *Light or dark* setting (Auto follows
+  Windows) the way Classic always has. A refreshed, more premium palette: Graphite (true black /
+  porcelain), Titanium, Midnight, Champagne (formerly Starlight) and Rosé gain their missing half, and
+  four new themes join them: **Peach**, **Olive**, **Amethyst** and **Lagoon**. Every variant keeps
+  4.5:1 contrast for secondary text and accents.
+- **Slate, a mid-tone tech grey** between the light and dark themes: brushed-aluminium glass, crisp
+  white text and an ice-blue accent. It keeps one look in every mode, like the mood themes.
+
+### Top HUD
+
+- **Weather fills its card** like the feed widgets: the conditions spread across the card and the
+  three-day forecast sits at the right edge. It now drops the forecast below about 470 px instead of
+  clipping it. Music's *Open Spotify* button keeps its natural size instead of stretching.
+- The snapshot tool takes `tw=<px>` to render the Top HUD at other monitor widths.
+
 ## 1.0.1 (2026-11-14)
 
 ### Look
