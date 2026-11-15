@@ -790,7 +790,9 @@ mod tests {
         assert!(resolve("slate", Appearance::Light).dark);
         assert_eq!(resolve("unknown", Appearance::Dark).id, CLASSIC);
         assert!(adaptive("olive") && !adaptive("hearth"));
-        assert!(adaptive("aurora") && adaptive("dusk") && adaptive("bordeaux") && adaptive("paper") && adaptive("mint"));
+        assert!(
+            adaptive("aurora") && adaptive("dusk") && adaptive("bordeaux") && adaptive("paper") && adaptive("mint")
+        );
     }
 
     #[test]
