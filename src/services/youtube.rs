@@ -121,7 +121,17 @@ fn channel_ids(prefs: &Prefs) -> Vec<String> {
 
 pub fn spawn(prefs: Prefs, sink: impl Fn(Update) + Send + 'static) -> poller::Poller<Prefs> {
     let mut fetcher = Fetcher::new();
-    poller::spawn("youtube", prefs, move |prefs: &Prefs| fetcher.run(prefs, &sink))
+    let mut failures = 0;
+    poller::spawn("youtube", prefs, move |prefs: &Prefs| {
+        let wait = fetcher.run(prefs, &sink);
+        if wait == RETRY {
+            failures += 1;
+            poller::backoff(RETRY, failures)
+        } else {
+            failures = 0;
+            wait
+        }
+    })
 }
 
 pub struct Fetcher {

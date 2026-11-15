@@ -12,6 +12,18 @@ use std::time::{Duration, Instant, SystemTime};
 /// Wake at least this often while active, to notice the PC waking from sleep.
 const CHECK_EVERY: Duration = Duration::from_secs(60);
 
+/// The longest a failing service is left alone between attempts.
+pub const MAX_RETRY: Duration = Duration::from_secs(30 * 60);
+
+/// How long to wait after `failures` failures in a row (1 = the first): `base`, doubling with each
+/// further failure, up to [`MAX_RETRY`]. A service that is down or rate-limiting us (HTTP 429)
+/// gets steadily more room instead of a request every few minutes for as long as it lasts; the
+/// first success resets the count.
+pub fn backoff(base: Duration, failures: u32) -> Duration {
+    let doublings = failures.saturating_sub(1).min(8);
+    base.saturating_mul(1 << doublings).min(MAX_RETRY.max(base))
+}
+
 /// When the next refresh is due, by both clocks. The monotonic clock is immune to clock changes
 /// but may not advance while the PC sleeps; the wall clock catches up after a night's sleep, so a
 /// laptop opened in the morning doesn't show last night's scores until a long timer runs out.
@@ -155,6 +167,17 @@ mod tests {
         assert_eq!(super::fan_out(&[7], 4, |&n| n), [7]);
     }
     use std::time::Duration;
+
+    #[test]
+    fn failures_back_off_up_to_a_cap() {
+        let three = Duration::from_secs(180);
+        let waits: Vec<u64> = (1..=6).map(|n| super::backoff(three, n).as_secs()).collect();
+        assert_eq!(waits, [180, 360, 720, 1440, 1800, 1800], "doubles, then holds at 30 min");
+        assert_eq!(super::backoff(three, 0), three, "no failures yet: the base");
+        assert_eq!(super::backoff(three, u32::MAX), super::MAX_RETRY, "never overflows");
+        let long = Duration::from_secs(3600);
+        assert_eq!(super::backoff(long, 3), long, "a base above the cap is kept, not shortened");
+    }
 
     #[test]
     fn wall_clock_catches_up_after_sleep() {

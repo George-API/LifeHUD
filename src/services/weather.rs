@@ -9,6 +9,7 @@ use serde_json::Value;
 use windows::Devices::Geolocation::{GeolocationAccessStatus, Geolocator};
 use windows::Foundation::TimeSpan;
 
+use crate::services::poller;
 use crate::settings::ResolvedCity;
 use crate::storage;
 
@@ -63,7 +64,10 @@ impl Config {
 }
 
 pub enum Command {
+    /// New settings: fetch now, even off screen, so Settings can say what it found.
     Configure(Config),
+    /// Whether the weather card is on screen. Only then does the forecast refresh on its own.
+    Active(bool),
 }
 
 pub enum Update {
@@ -110,19 +114,50 @@ struct Worker {
 impl Worker {
     fn run(mut self, rx: Receiver<Command>) {
         self.last_good = cached(&self.config);
-        let mut wait = Duration::ZERO;
+        // When the next refresh is due, in wall-clock seconds, so a laptop waking from sleep
+        // refreshes at once. A forecast saved minutes ago by the last run waits out its age
+        // instead of being fetched again at every start.
+        let mut due = self.last_good.as_ref().map_or(0, |s| s.fetched_at + REFRESH.as_secs() as i64);
+        // Off until the HUD says the card is on screen (it does right after starting us).
+        let mut active = false;
+        let mut failures = 0;
         loop {
-            match rx.recv_timeout(wait) {
-                Ok(Command::Configure(c)) => self.config = c,
+            let timeout = if active {
+                // Wake at least once a minute to notice the clock jumping after sleep.
+                Duration::from_secs((due - unix_now()).clamp(0, 60) as u64)
+            } else {
+                Duration::from_secs(3600)
+            };
+            let mut configured = false;
+            match rx.recv_timeout(timeout) {
+                Ok(cmd) => self.apply(cmd, &mut active, &mut configured),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
             // Coalesce bursts (e.g. typing a city, then switching units).
             while let Ok(cmd) = rx.try_recv() {
-                let Command::Configure(c) = cmd;
-                self.config = c;
+                self.apply(cmd, &mut active, &mut configured);
             }
-            wait = if self.refresh() { REFRESH } else { RETRY };
+            if configured || (active && unix_now() >= due) {
+                let wait = if self.refresh() {
+                    failures = 0;
+                    REFRESH
+                } else {
+                    failures += 1;
+                    poller::backoff(RETRY, failures)
+                };
+                due = unix_now() + wait.as_secs() as i64;
+            }
+        }
+    }
+
+    fn apply(&mut self, cmd: Command, active: &mut bool, configured: &mut bool) {
+        match cmd {
+            Command::Configure(c) => {
+                self.config = c;
+                *configured = true;
+            }
+            Command::Active(a) => *active = a,
         }
     }
 

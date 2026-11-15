@@ -79,6 +79,33 @@ pub fn get_if_modified(
     Ok(Some((body, lm)))
 }
 
+/// What a server said identifies the copy we have, for asking "has this changed?" next time.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Validators {
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// A conditional GET using both `ETag` and `Last-Modified`: `Ok(None)` when the server answers
+/// 304 (our copy is current, and the reply is a few hundred bytes instead of the whole feed).
+pub fn get_conditional(url: &str, known: &Validators) -> Result<Option<(String, Validators)>, ureq::Error> {
+    let mut req = agent().get(url);
+    if let Some(etag) = &known.etag {
+        req = req.header("If-None-Match", etag.as_str());
+    }
+    if let Some(lm) = &known.last_modified {
+        req = req.header("If-Modified-Since", lm.as_str());
+    }
+    let mut resp = req.call()?;
+    if resp.status() == 304 {
+        return Ok(None);
+    }
+    let header = |name: &str| resp.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let fresh = Validators { etag: header("etag"), last_modified: header("last-modified") };
+    let body = resp.body_mut().with_config().limit(LIMIT).read_to_string()?;
+    Ok(Some((body, fresh)))
+}
+
 /// A GET answer that keeps the status and the rate-limit hint instead of turning 4xx/5xx into an
 /// error (Reddit's anonymous feeds allow about one request a minute and say when the window resets).
 pub struct Reply {

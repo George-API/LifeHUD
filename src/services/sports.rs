@@ -196,6 +196,8 @@ struct Board {
     at: Instant,
     every: Duration,
     games: Vec<Game>,
+    /// Failed refreshes in a row, so a league whose feed keeps failing backs off.
+    failures: u32,
 }
 
 pub struct Fetcher {
@@ -243,19 +245,21 @@ impl Fetcher {
                 Ok(body) => {
                     let games = parse_scoreboard(&body, lg, &[]);
                     let every = next_refresh(&select(games.clone(), now), now, false);
-                    self.boards.insert(id.clone(), Board { at: Instant::now(), every, games });
+                    self.boards.insert(id.clone(), Board { at: Instant::now(), every, games, failures: 0 });
                 }
                 Err(e) => {
                     failures += 1;
                     storage::log(format!("sports refresh failed ({}): {e}", lg.name));
-                    // Keep showing the last scoreboard; try again in a few minutes.
+                    // Keep showing the last scoreboard; try again in a few minutes, then less often.
                     let board = self.boards.entry(id.clone()).or_insert(Board {
                         at: Instant::now(),
                         every: RETRY,
                         games: Vec::new(),
+                        failures: 0,
                     });
+                    board.failures += 1;
                     board.at = Instant::now();
-                    board.every = RETRY;
+                    board.every = poller::backoff(RETRY, board.failures);
                 }
             }
         }

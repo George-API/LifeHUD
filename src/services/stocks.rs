@@ -181,7 +181,18 @@ pub fn cached() -> Vec<Quote> {
 }
 
 pub fn spawn(prefs: Prefs, sink: impl Fn(Update) + Send + 'static) -> poller::Poller<Prefs> {
-    poller::spawn("stocks", prefs, move |prefs: &Prefs| fetch(prefs, &sink))
+    // Yahoo answers bursts with 429s: back off while it keeps failing.
+    let mut failures = 0;
+    poller::spawn("stocks", prefs, move |prefs: &Prefs| {
+        let wait = fetch(prefs, &sink);
+        if wait == RETRY {
+            failures += 1;
+            poller::backoff(RETRY, failures)
+        } else {
+            failures = 0;
+            wait
+        }
+    })
 }
 
 pub fn fetch(prefs: &Prefs, sink: &dyn Fn(Update)) -> Duration {

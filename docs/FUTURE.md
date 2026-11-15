@@ -6,21 +6,17 @@ Where Life HUD is heading. This is a direction, not a commitment. Ideas and vote
 ## Shipped in 1.0.0
 
 Five new widgets (Sports, YouTube, Reddit, Netflix, Stocks), one widget list shared by both layouts,
-Edit Widgets mode, "now watching" for browser video, seek and per-app volume for music, the Search & AI
-panel, theme quick-swap, install on first run, and a smoother layout switch. Details are in the
-[changelog](../CHANGELOG.md).
+Edit Widgets mode, video that plays inside the YouTube and Netflix widgets, "now watching" for browser
+video, seek and per-app volume for music, the Search & AI panel, theme quick-swap, install on first
+run, and a smoother layout switch. Details are in the [changelog](../CHANGELOG.md).
 
 A few things shipped differently from the original plans, on purpose:
 
-- **YouTube** plays videos in a pop-out player rather than an embedded web view, which keeps the HUD
+- **YouTube and Netflix** play inside their widgets in a frameless Edge app window docked over the card,
+  rather than an embedded web view, so your sign-in and the sites' DRM keep working and the HUD stays
   light.
 - **Reddit's** JSON API now needs OAuth, so the widget reads its public RSS feeds, which carry no scores.
 - **Stocks** use Yahoo Finance's public chart data, so no API key is needed.
-
-## In progress
-
-- **Video inside the YouTube and Netflix widgets**, by docking a frameless Edge app window over the
-  widget, so your sign-in and the sites' DRM keep working.
 
 ## Next
 

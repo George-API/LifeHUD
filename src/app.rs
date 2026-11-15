@@ -61,7 +61,7 @@ pub struct App {
     tasks: RefCell<TaskList>,
     weather_tx: RefCell<Option<Sender<weather::Command>>>,
     media_tx: RefCell<Option<Sender<media::Command>>>,
-    news_tx: RefCell<Option<Sender<(String, String)>>>,
+    news_tx: RefCell<Option<Sender<news::Command>>>,
     news_curated: RefCell<Vec<news::Article>>,
     news_top: RefCell<Vec<news::Article>>,
     /// Bound to the UI once; rows are updated in place so the list isn't rebuilt every minute.
@@ -548,7 +548,7 @@ impl App {
         if let Some(sw) = self.settings_window.borrow().as_ref() {
             sw.global::<SettingsState>().set_hud_visible(visible);
         }
-        self.feeds.apply_layout(&self.settings.borrow());
+        self.apply_widget_activity();
     }
 
     pub fn set_layout(self: &Rc<Self>, layout: Layout) {
@@ -608,7 +608,7 @@ impl App {
     /// Lays the widgets out for the current layout.
     fn show_layout(&self) {
         self.hud.global::<HudState>().set_vertical(self.settings.borrow().layout == Layout::Left);
-        self.feeds.apply_layout(&self.settings.borrow());
+        self.apply_widget_activity();
     }
 
     /// Folds the window from `from` to `to`, one step per display refresh. A small thread waits on
@@ -861,6 +861,7 @@ impl App {
             post(move |app| app.on_news(update));
         });
         *self.news_tx.borrow_mut() = Some(tx);
+        self.apply_widget_activity();
 
         let prefer = self.settings.borrow().prefer_spotify;
         crate::volume::attach(&self.hud);
@@ -876,6 +877,17 @@ impl App {
     fn send_media(&self, cmd: media::Command) {
         if let Some(tx) = self.media_tx.borrow().as_ref() {
             let _ = tx.send(cmd);
+        }
+    }
+
+    /// Tells every widget's fetcher whether it's on screen: off-screen widgets don't use the network.
+    fn apply_widget_activity(&self) {
+        let s = self.settings.borrow();
+        self.feeds.apply_layout(&s);
+        let visible = s.visible_widgets();
+        self.send_weather(weather::Command::Active(visible.contains(&"weather")));
+        if let Some(tx) = self.news_tx.borrow().as_ref() {
+            let _ = tx.send(news::Command::Active(visible.contains(&"news")));
         }
     }
 
@@ -1494,7 +1506,7 @@ impl App {
     fn apply_sidebar_order(&self) {
         let kinds = self.settings.borrow().sidebar_kinds();
         self.hud.global::<HudState>().set_sidebar_order(ModelRc::new(VecModel::from(kinds)));
-        self.feeds.apply_layout(&self.settings.borrow());
+        self.apply_widget_activity();
         self.refresh_edit();
     }
 
@@ -1698,7 +1710,7 @@ impl App {
                 self.hud.global::<HudState>().set_news_placeholder("Loading headlines…".into());
                 self.render_news();
                 if let Some(tx) = self.news_tx.borrow().as_ref() {
-                    let _ = tx.send((curated.into(), top.into()));
+                    let _ = tx.send(news::Command::Sources(curated.into(), top.into()));
                 }
             }
             "media" => {

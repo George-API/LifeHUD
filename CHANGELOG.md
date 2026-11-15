@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Look
+
+- **A sleeker app icon,** sharp at every size from the 16 px tray icon up: a slimmer bar, frosted
+  tiles and a hairline edge so it reads on light and dark backgrounds. `tools/make-icon.py` now
+  draws it (at 1024 px, downsampled) in place of the PowerShell script.
+
+### Performance and reliability
+
+- **Weather and News only refresh while their card is on screen**, like the other widgets. Changing
+  their settings still fetches at once, so Settings can show what it found.
+- **Failing services back off.** A source that is down or rate-limiting (HTTP 429) is retried after a
+  few minutes, then twice as long each time, up to 30 minutes, instead of every few minutes for as long
+  as the outage lasts. Each Sports league backs off on its own. The first success resets it.
+- **News asks before downloading.** Feeds that support it (ETag or Last-Modified) answer an unchanged
+  refresh with a few hundred bytes instead of the whole feed.
+- **No refetch on every start:** a forecast less than 15 minutes old is shown as is, and refreshed when
+  it's due.
+
 ## 1.0.0 (2026-11-14)
 
 ### Widgets
@@ -14,9 +34,15 @@
 - **Settings → Widgets.** An overview of every widget with an *On HUD* / *Not shown* badge, plus
   to-scale drag-and-drop previews of both layouts.
 - **New widgets:** Sports (live scores for your leagues and teams, plus headlines), YouTube (new uploads
-  from your channels, a Watch Later list and a pop-out player), Reddit, Netflix (the weekly global Top 10
-  with rank movement) and Stocks (watchlist and indices with sparklines, in each quote's currency). None
-  needs an account.
+  from your channels and a Watch Later list), Reddit, Netflix (the weekly global Top 10 with rank
+  movement) and Stocks (watchlist and indices with sparklines, in each quote's currency). None needs an
+  account.
+- **Videos play inside the widget.** Click a YouTube video, or a Netflix title, and it plays in the
+  widget itself: a frameless Microsoft Edge window kept exactly over the widget's player area, so your
+  sign-in and the sites' DRM keep working. It follows the HUD, hides while the layout changes, and
+  closes if the widget leaves the HUD. *Settings → YouTube* can switch to a pop-out window or the
+  browser instead. YouTube's player is served from a page on 127.0.0.1 only, behind a per-launch token
+  (see [SECURITY.md](SECURITY.md)).
 - **Now watching.** A YouTube or Netflix video playing in your browser (Chrome, Edge, Firefox, Brave,
   Opera, Vivaldi) shows in that site's widget with its thumbnail, progress and play/pause. Clicking it
   brings the browser to the front. Nothing is fetched.

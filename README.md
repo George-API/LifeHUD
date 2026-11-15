@@ -4,8 +4,8 @@
 
 # Life HUD
 
-A heads-up display for Windows, docked to the edge of your screen.<br>
-Written in Rust.
+Your day at a glance, docked to the edge of your screen.<br>
+A heads-up display for Windows, written in Rust.
 
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Release](https://img.shields.io/github/v/release/George-API/LifeHUD?color=2ea44f)](https://github.com/George-API/LifeHUD/releases/latest)
@@ -21,12 +21,13 @@ Written in Rust.
 
 </div>
 
-Life HUD puts a clock and four widgets of your choice in a slim bar across the top of the screen, or a
-column down the side. It reserves that space the way the taskbar does, so windows resize around it
-instead of sliding under it. Fullscreen apps still cover it.
+The time, the weather, what's playing, what's next. Life HUD keeps them where your eyes already are: a
+slim bar across the top of the screen, or a column down the side, with a clock and four widgets of your
+choice. It reserves that space the way the taskbar does, so windows resize around it instead of sliding
+under it. Fullscreen apps still cover it.
 
-It's a single native exe written in Rust: no Electron, no runtime, nothing to install alongside it. It
-uses about half a percent of one CPU core with music playing. No account, no telemetry.
+It's a single 18 MB native exe written in Rust: no Electron, no runtime, nothing to install alongside it.
+It uses about half a percent of one CPU core with music playing. No account, no telemetry, no ads.
 
 ## Install
 
@@ -49,8 +50,8 @@ come with a SHA-256.
 - Music: Spotify, or anything that uses Windows media controls, with seek and the player's own volume.
   Right-click it for your saved playlists.
 - Reddit: r/popular and your subreddits, with a quick picker
-- YouTube and Netflix: new uploads from your channels, Netflix's Top 10, and whatever you're watching in
-  your browser right now
+- YouTube and Netflix: new uploads from your channels and Netflix's Top 10, played right in the widget,
+  plus whatever you're watching in your browser right now
 - News, sports scores for your teams, and a stock watchlist
 - A search box: Enter goes to Google, or send the question to ChatGPT, Claude or Gemini with your own key
 
@@ -93,9 +94,18 @@ Rust 1.92+ with the MSVC toolchain.
 cargo run --release
 ```
 
-Rust and [Slint](https://slint.dev), talking to Win32 and WinRT directly. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the layout of the code, and [SECURITY.md](SECURITY.md) for
-reporting vulnerabilities.
+Rust and [Slint](https://slint.dev), talking to Win32 and WinRT directly. Debug builds can render any
+widget offscreen with `cargo run -- --snapshot <dir> <widget>`, so you can work on one without docking
+anything.
+
+## Contributing
+
+New widgets follow one pattern: a data source in `src/services/`, a controller in `src/feeds/`, and one
+Slint file in `ui/widgets/`. [CONTRIBUTING.md](CONTRIBUTING.md) walks through adding one, plus the
+layout of the code and the conventions it follows. New widgets, themes and fixes are all welcome.
+
+For bugs, the log at `%LOCALAPPDATA%\LifeHUD\lifehud.log` is the most useful thing to attach. Security
+issues go through [SECURITY.md](SECURITY.md) instead.
 
 ## License
 

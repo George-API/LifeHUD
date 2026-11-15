@@ -9,7 +9,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde::{Deserialize, Serialize};
 
-use crate::services::http;
+use crate::services::{http, poller};
 use crate::storage;
 
 const CACHE: &str = "news-cache.json";
@@ -112,28 +112,60 @@ pub fn cached(source_id: &str) -> Option<Vec<Article>> {
     storage::load_json::<HashMap<String, Vec<Article>>>(CACHE).and_then(|mut m| m.remove(source_id))
 }
 
-/// Starts the fetcher; send `(curated_id, top_id)` to change sources.
-pub fn spawn(curated: String, top: String, sink: impl Fn(Update) + Send + 'static) -> Sender<(String, String)> {
-    let (tx, rx) = mpsc::channel::<(String, String)>();
+/// What the HUD tells the news thread.
+pub enum Command {
+    /// New sources `(curated_id, top_id)`: fetch them now, even off screen.
+    Sources(String, String),
+    /// Whether a news card is on screen. Only then do headlines refresh on their own.
+    Active(bool),
+}
+
+/// Starts the fetcher.
+pub fn spawn(curated: String, top: String, sink: impl Fn(Update) + Send + 'static) -> Sender<Command> {
+    let (tx, rx) = mpsc::channel::<Command>();
     std::thread::Builder::new()
         .name("news".into())
         .spawn(move || {
             let mut current = (curated, top);
-            let mut wait = Duration::ZERO;
+            // Off until the HUD says a news card is on screen (it does right after starting us).
+            let mut active = false;
+            // Wall-clock seconds when the next refresh is due (0: now), so waking from sleep
+            // refreshes at once.
+            let mut due = 0;
+            let mut failures = 0;
+            // What each feed said identifies its current copy, so an unchanged feed is a 304.
+            let mut validators: HashMap<String, http::Validators> = HashMap::new();
             loop {
-                match rx.recv_timeout(wait) {
-                    Ok(ids) => current = ids,
+                let now = crate::services::weather::unix_now();
+                let timeout = if active {
+                    Duration::from_secs((due - now).clamp(0, 60) as u64)
+                } else {
+                    Duration::from_secs(3600)
+                };
+                let mut changed = false;
+                let mut apply = |cmd: Command| match cmd {
+                    Command::Sources(curated, top) => {
+                        current = (curated, top);
+                        changed = true;
+                    }
+                    Command::Active(a) => active = a,
+                };
+                match rx.recv_timeout(timeout) {
+                    Ok(cmd) => apply(cmd),
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
-                while let Ok(ids) = rx.try_recv() {
-                    current = ids;
+                while let Ok(cmd) = rx.try_recv() {
+                    apply(cmd);
+                }
+                if !changed && !(active && crate::services::weather::unix_now() >= due) {
+                    continue;
                 }
                 let mut cache: HashMap<String, Vec<Article>> = storage::load_json(CACHE).unwrap_or_default();
                 let mut all_ok = true;
                 for (feed, id) in [(Feed::Curated, &current.0), (Feed::Top, &current.1)] {
                     let src = find(feed, id);
-                    match fetch(src) {
+                    match fetch(src, &mut validators, cache.get(src.id)) {
                         Ok(articles) => {
                             cache.insert(src.id.into(), articles.clone());
                             sink(Update::Articles { feed, source: src.id.into(), articles });
@@ -147,15 +179,36 @@ pub fn spawn(curated: String, top: String, sink: impl Fn(Update) + Send + 'stati
                 }
                 cache.retain(|k, _| *k == current.0 || *k == current.1);
                 storage::save_json(CACHE, &cache);
-                wait = if all_ok { REFRESH } else { RETRY };
+                let wait = if all_ok {
+                    failures = 0;
+                    REFRESH
+                } else {
+                    failures += 1;
+                    poller::backoff(RETRY, failures)
+                };
+                due = crate::services::weather::unix_now() + wait.as_secs() as i64;
             }
         })
         .expect("spawn news thread");
     tx
 }
 
-fn fetch(src: &Source) -> Result<Vec<Article>, String> {
-    let body = http::get(src.url).map_err(|e| e.to_string())?;
+/// Fetches a feed, asking whether it changed since `validators` last saw it. An unchanged feed
+/// (HTTP 304) keeps `previous`, the articles already shown.
+fn fetch(
+    src: &Source,
+    validators: &mut HashMap<String, http::Validators>,
+    previous: Option<&Vec<Article>>,
+) -> Result<Vec<Article>, String> {
+    let known =
+        if previous.is_some() { validators.get(src.url).cloned().unwrap_or_default() } else { Default::default() };
+    let body = match http::get_conditional(src.url, &known).map_err(|e| e.to_string())? {
+        Some((body, fresh)) => {
+            validators.insert(src.url.to_string(), fresh);
+            body
+        }
+        None => return previous.cloned().ok_or_else(|| "not modified, but nothing cached".to_string()),
+    };
     let mut articles = parse(&body)?;
     if articles.is_empty() {
         return Err("feed had no articles".into());
