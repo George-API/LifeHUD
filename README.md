@@ -14,7 +14,7 @@ Written in Rust.
 
 <br>
 
-<img src="docs/images/sidebar.png" width="340" alt="Life HUD as a sidebar: the time, today's tasks and notes, and the weather">
+<img src="docs/images/sidebar.png" width="340" alt="Life HUD as a sidebar: the time, the weather, Spotify playing in the music card, today's tasks and notes, and stocks">
 
 <br>
 <br>
