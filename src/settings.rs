@@ -87,6 +87,9 @@ pub struct Settings {
     pub hud_visible: bool,
     /// Refit ordinary windows into the space left when the HUD docks, resizes or hides.
     pub fit_windows: bool,
+    /// Keep the HUD above fullscreen apps (borderless games, video, presentations) instead of
+    /// stepping aside for them.
+    pub over_fullscreen: bool,
 
     pub theme: String,
     pub appearance: Appearance,
@@ -162,6 +165,7 @@ impl Default for Settings {
             monitor: None,
             hud_visible: true,
             fit_windows: true,
+            over_fullscreen: false,
             theme: crate::theme::CLASSIC.into(),
             appearance: Appearance::Auto,
             use_24h: locale::prefers_24h(),

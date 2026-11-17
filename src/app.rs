@@ -91,6 +91,10 @@ pub struct App {
     /// they've been trimmed elsewhere.
     notes_watch: Timer,
     display_timer: Timer,
+    /// A fullscreen app is running on the shell's monitor.
+    fullscreen: Cell<bool>,
+    /// While pinned over a fullscreen app: puts the HUD back on top if that app raises itself.
+    pin_timer: Timer,
     /// The layout fold in progress, if any.
     morph: RefCell<Option<Morph>>,
     /// Sports, YouTube, Reddit, Netflix and Stocks.
@@ -132,6 +136,8 @@ impl App {
             notes_status_timer: Timer::default(),
             notes_watch: Timer::default(),
             display_timer: Timer::default(),
+            fullscreen: Cell::new(false),
+            pin_timer: Timer::default(),
             morph: RefCell::new(None),
             feeds,
         });
@@ -534,10 +540,8 @@ impl App {
             ShellEvent::PositionChanged => self.reposition(),
             ShellEvent::TaskbarCreated => self.dock(),
             ShellEvent::Fullscreen(on) => {
-                // Games, video and presentations get the whole screen.
-                if let Some(hwnd) = self.hwnd.get() {
-                    effects::set_topmost(hwnd, !on);
-                }
+                self.fullscreen.set(on);
+                self.apply_topmost();
             }
             ShellEvent::DisplayChanged => {
                 let w = Rc::downgrade(self);
@@ -555,6 +559,23 @@ impl App {
                     self.apply_theme();
                 }
             }
+        }
+    }
+
+    /// Games, video and presentations get the whole screen, unless the user pinned the HUD above them.
+    fn apply_topmost(self: &Rc<Self>) {
+        let Some(hwnd) = self.hwnd.get() else { return };
+        let fullscreen = self.fullscreen.get();
+        let pinned = self.settings.borrow().over_fullscreen;
+        effects::set_topmost(hwnd, !fullscreen || pinned);
+        if fullscreen && pinned {
+            // Fullscreen apps are often topmost too and climb back over us when they're clicked,
+            // so keep reclaiming the top while one is running. A no-op SetWindowPos is cheap.
+            self.pin_timer.start(TimerMode::Repeated, Duration::from_millis(750), move || {
+                effects::set_topmost(hwnd, true);
+            });
+        } else {
+            self.pin_timer.stop();
         }
     }
 
@@ -1296,6 +1317,7 @@ impl App {
         st.set_page(page.unwrap_or(0));
         st.set_hud_visible(s.hud_visible);
         st.set_fit_windows(s.fit_windows);
+        st.set_over_fullscreen(s.over_fullscreen);
         st.set_open_at_login(startup::is_enabled());
         self.populate_layout(&st);
         theme::fill_gallery(&st, &s.theme, s.appearance);
@@ -1715,6 +1737,10 @@ impl App {
                 st.set_open_at_login(startup::is_enabled());
             }
             "fit" => self.settings.borrow_mut().fit_windows = st.get_fit_windows(),
+            "over-fullscreen" => {
+                self.settings.borrow_mut().over_fullscreen = st.get_over_fullscreen();
+                self.apply_topmost();
+            }
             "layout" => self.set_layout(if st.get_top_layout() { Layout::Top } else { Layout::Left }),
             "size" => {
                 // The slider fires on every pixel of a drag; only a new half-percent step moves the HUD.

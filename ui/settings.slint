@@ -58,6 +58,7 @@ export global SettingsState {
 
     in-out property <bool> top-layout: true;
     in-out property <bool> fit-windows: true;
+    in-out property <bool> over-fullscreen;
     in-out property <float> size-percent: 9;
     in property <float> size-min: 7;
     in property <float> size-max: 18;
@@ -534,6 +535,11 @@ export component SettingsWindow inherits Window {
                             label: "Fit open windows";
                             detail: "Resize other windows to the space that's left.";
                             Switch { checked <=> SettingsState.fit-windows; toggled => { SettingsState.changed("fit"); } }
+                        }
+                        Row {
+                            label: "Stay above fullscreen apps";
+                            detail: "Keep the HUD on screen over fullscreen games, video and slides.";
+                            Switch { checked <=> SettingsState.over-fullscreen; toggled => { SettingsState.changed("over-fullscreen"); } }
                         }
                         Row {
                             label: "Display";
